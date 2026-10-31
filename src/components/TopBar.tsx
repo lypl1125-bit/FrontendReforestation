@@ -1,6 +1,6 @@
 import { Search, Sun, Bell } from 'lucide-react';
 
-export default function TopBar() {
+export default function TopBar({ userName, onLogout }: { userName?: string; onLogout?: () => void }) {
   return (
     <header className="fixed top-0 left-0 md:left-72 right-0 h-16 md:h-20 bg-surface/80 backdrop-blur-xl shadow-sm z-40 flex items-center justify-between px-4 md:px-8 border-b border-surface-container">
       <div className="flex items-center gap-4 flex-1">
@@ -30,10 +30,11 @@ export default function TopBar() {
         <div className="flex items-center gap-2">
           <img src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100&h=100&fit=crop" alt="Profile" className="w-8 h-8 rounded-full object-cover border border-surface-container shadow-sm" />
           <div className="hidden xl:flex flex-col text-left">
-            <span className="text-sm font-semibold text-on-surface leading-tight">Dra. Elena V.</span>
-            <span className="text-[10px] text-on-surface-variant font-semibold">Técnica Forestal Senior</span>
+            <span className="text-sm font-semibold text-on-surface leading-tight">{userName || 'Custodio Forestal'}</span>
+            <span className="text-[10px] text-on-surface-variant font-semibold">Sesión de demostración</span>
           </div>
         </div>
+        {onLogout && <button onClick={onLogout} className="rounded-full border border-outline-variant px-3 py-1.5 text-xs font-semibold text-on-surface-variant transition hover:bg-surface-container hover:text-primary">Salir</button>}
       </div>
     </header>
   );

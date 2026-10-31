@@ -37,3 +37,14 @@ not silently fall back to mock data when API mode is selected.
 The client in `src/services/api.ts` exposes the documented endpoints for basins,
 diagnostics, map zones, species/nurseries, and project planning. The mock transport
 in `src/services/mockApi.ts` mirrors those endpoints for development without a server.
+
+## Public pages and demo access
+
+- `/` is the public landing page.
+- `/login` and `/register` provide a local demo access flow.
+- Successful login or registration opens the existing application at `/app`.
+
+Authentication is intentionally simulated for now: any valid email and non-empty
+password can enter, registration checks the required fields and matching passwords,
+and only the demo profile is kept in the current browser session. Passwords are not
+stored and Supabase or social sign-in are not connected.
