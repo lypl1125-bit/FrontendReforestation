@@ -1,9 +1,67 @@
 import { MapPin, Target, Activity, Droplet, TreePine, CloudRain, CheckCircle2, Navigation, Leaf } from 'lucide-react';
 import { ViewState } from '../types';
+import { useEffect, useState } from 'react';
+import { api, apiOptions, ApiRecord } from '../services/api';
 
 export default function DiagnosticoView({ setCurrentView }: { setCurrentView: (v: ViewState) => void }) {
+  const [diagnosis, setDiagnosis] = useState<ApiRecord | null>(null);
+  const [basin, setBasin] = useState<ApiRecord | null>(null);
+  const [zonesCount, setZonesCount] = useState(0);
+  const [mapLayersCount, setMapLayersCount] = useState(0);
+  const [loadError, setLoadError] = useState('');
+  const [diagnosisLoading, setDiagnosisLoading] = useState(apiOptions.dataSource === 'api');
+
+  useEffect(() => {
+    if (apiOptions.dataSource !== 'api') return;
+    let active = true;
+    const load = async () => {
+      const results = await Promise.allSettled([
+        api.getDiagnosticoVigente(apiOptions.loteId),
+        api.listCuencas(),
+        api.getCapasMapa(),
+        api.getZonasMapa(apiOptions.loteId),
+        api.getNdvi(apiOptions.loteId),
+      ]);
+      if (!active) return;
+      const errors = results.flatMap((result) => result.status === 'rejected' ? [result.reason instanceof Error ? result.reason.message : 'Error al cargar datos de la API.'] : []);
+      if (results[0].status === 'fulfilled') setDiagnosis(results[0].value);
+      if (results[1].status === 'fulfilled') setBasin(results[1].value[0] ?? null);
+      if (results[2].status === 'fulfilled') setMapLayersCount(results[2].value.length);
+      if (results[3].status === 'fulfilled') {
+        const features = results[3].value.features;
+        setZonesCount(Array.isArray(features) ? features.length : 0);
+      }
+      if (errors.length) setLoadError(errors.join(' '));
+      setDiagnosisLoading(false);
+    };
+    void load();
+    return () => { active = false; };
+  }, []);
+
+  const precipitation = Number(diagnosis?.precipitacion_anual_mm ?? 1850);
+  const coverageLoss = Number(diagnosis?.perdida_cobertura_pct ?? 42);
+  const riparianWidth = Number(diagnosis?.franja_riparia_legal_m ?? 30);
+  const rainfallRegime = String((diagnosis?.regimen as ApiRecord | undefined)?.nombre ?? 'Bimodal');
+  const risk = String(diagnosis?.riesgo_acarreo ?? 'medio_alto').replaceAll('_', ' ');
+  const connectivity = String(diagnosis?.conectividad_fauna ?? 'interrumpido').replaceAll('_', ' ');
+  const months = Array.isArray(diagnosis?.precipitacion_mensual)
+    ? diagnosis.precipitacion_mensual.map((item) => Number((item as ApiRecord).precipitacion_mm ?? 0))
+    : [120, 95, 150, 180, 200, 80, 60, 70, 140, 190, 160, 100];
+  const plantingWindow = Array.isArray(diagnosis?.ventanas_siembra)
+    ? String((diagnosis.ventanas_siembra[0] as ApiRecord | undefined)?.nota ?? 'Octubre - Diciembre')
+    : 'Octubre - Diciembre';
+  const suggestedSpecies = Number(diagnosis?.total_especies_sugeridas ?? 14);
+  const compatibility = Number(diagnosis?.compatibilidad_promedio_pct ?? 94);
+
+  if (apiOptions.dataSource === 'api' && !diagnosis) {
+    return <p role={loadError ? 'alert' : 'status'} className={`rounded-xl p-4 text-sm ${loadError ? 'bg-error/10 text-error' : 'bg-surface-container-low text-on-surface-variant'}`}>
+      {diagnosisLoading ? 'Cargando diagnóstico y datos del predio desde la API…' : loadError || 'La API no devolvió un diagnóstico vigente para este lote.'}
+    </p>;
+  }
+
   return (
     <div className="flex flex-col gap-6 animate-in fade-in duration-500">
+      {loadError && <p role="alert" className="rounded-xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">{loadError}</p>}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         
         {/* LEFT COLUMN */}
@@ -74,7 +132,7 @@ export default function DiagnosticoView({ setCurrentView }: { setCurrentView: (v
                   Pérdida Cobertura
                   <Leaf className="w-3 h-3 text-error" />
                 </div>
-                <div className="text-2xl font-epilogue font-bold text-error mt-1 leading-none">-42%</div>
+                <div className="text-2xl font-epilogue font-bold text-error mt-1 leading-none">-{coverageLoss}%</div>
                 <div className="text-xs font-semibold text-on-surface-variant mt-1">Dosel fragmentado</div>
                 <div className="w-full h-1.5 bg-surface-container-high rounded-full mt-3 overflow-hidden">
                   <div className="h-full bg-error w-[58%] rounded-full"></div>
@@ -85,15 +143,16 @@ export default function DiagnosticoView({ setCurrentView }: { setCurrentView: (v
             <div className="bg-surface-container-low p-4 rounded-xl border border-surface-container flex flex-col gap-2">
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-1 text-sm font-semibold text-on-surface">
-                  <CloudRain className="w-4 h-4 text-secondary"/> Precipitación: 1,850 mm/año
+                <CloudRain className="w-4 h-4 text-secondary"/> Precipitación: {precipitation.toLocaleString('es-CO')} mm/año
                 </div>
-                <span className="text-[10px] font-bold bg-surface-container-lowest px-2 py-0.5 rounded-full text-secondary shadow-sm">Bimodal</span>
+                <span className="text-[10px] font-bold bg-surface-container-lowest px-2 py-0.5 rounded-full text-secondary shadow-sm">{rainfallRegime}</span>
               </div>
               {/* Fake chart */}
               <div className="h-16 flex items-end justify-between gap-1 mt-2">
-                {[2, 3, 4, 6, 8, 5, 4, 3, 5, 7, 9, 6].map((h, i) => (
-                  <div key={i} className={`w-full rounded-t-sm ${i >= 9 ? 'bg-secondary' : 'bg-primary-fixed-dim'}`} style={{height: `${h*10}%`}}></div>
-                ))}
+                {months.map((value, i) => {
+                const height = Math.max(10, Math.round(value / Math.max(...months, 1) * 100));
+                return <div key={i} className={`w-full rounded-t-sm ${i >= 9 ? 'bg-secondary' : 'bg-primary-fixed-dim'}`} style={{ height: `${height}%` }} />;
+                })}
               </div>
               <div className="flex justify-between text-[10px] font-semibold text-on-surface-variant mt-1">
                 <span>Ene</span><span>Mar</span><span>May</span><span>Jul</span><span>Sep</span><span className="text-secondary font-bold">Nov</span>
@@ -101,7 +160,7 @@ export default function DiagnosticoView({ setCurrentView }: { setCurrentView: (v
               <div className="mt-3 bg-surface-container-highest p-3 rounded-lg flex items-center justify-between border border-surface-container">
                 <div>
                   <div className="text-xs font-bold text-tertiary-container">Ventana Óptima de Siembra</div>
-                  <div className="text-[10px] text-on-surface font-semibold mt-0.5">Octubre - Diciembre</div>
+                  <div className="text-[10px] text-on-surface font-semibold mt-0.5">{plantingWindow}</div>
                 </div>
                 <CheckCircle2 className="text-secondary w-5 h-5"/>
               </div>
@@ -116,9 +175,9 @@ export default function DiagnosticoView({ setCurrentView }: { setCurrentView: (v
               <div>
                 <h3 className="font-epilogue text-xl font-bold text-primary flex items-center gap-2">
                   <div className="w-2.5 h-2.5 bg-secondary rounded-full animate-pulse"></div>
-                  Cuenca Hidrográfica Río Claro
+                  Cuenca Hidrográfica {String(basin?.nombre ?? 'Río Claro')}
                 </h3>
-                <span className="text-xs text-on-surface-variant font-semibold">Valle Central · Elevación: 1,420 msnm</span>
+                <span className="text-xs text-on-surface-variant font-semibold">Valle Central · Elevación: {String(basin?.elevacion_msnm ?? 1420)} msnm</span>
               </div>
               <div className="flex bg-surface-container-low p-1 rounded-lg">
                 <button className="px-3 py-1.5 bg-primary text-white text-xs font-bold rounded-md shadow-sm">Topográfica</button>
@@ -154,21 +213,21 @@ export default function DiagnosticoView({ setCurrentView }: { setCurrentView: (v
                 <div className="p-2 bg-surface-container-lowest rounded-lg shadow-sm"><Navigation className="w-5 h-5 text-secondary"/></div>
                 <div>
                   <div className="text-xs text-on-surface-variant font-semibold">Franja Riparia Legal</div>
-                  <div className="text-sm font-bold text-primary">30m requeridos</div>
+                  <div className="text-sm font-bold text-primary">{riparianWidth}m requeridos</div>
                 </div>
               </div>
               <div className="bg-surface-container-low p-3 rounded-xl flex items-center gap-3">
                 <div className="p-2 bg-surface-container-lowest rounded-lg shadow-sm"><CloudRain className="w-5 h-5 text-tertiary-container"/></div>
                 <div>
                   <div className="text-xs text-on-surface-variant font-semibold">Riesgo de Acarreo</div>
-                  <div className="text-sm font-bold text-primary">Medio - Alto</div>
+                  <div className="text-sm font-bold text-primary capitalize">{risk}</div>
                 </div>
               </div>
               <div className="bg-surface-container-low p-3 rounded-xl flex items-center gap-3">
                 <div className="p-2 bg-surface-container-lowest rounded-lg shadow-sm"><TreePine className="w-5 h-5 text-primary"/></div>
                 <div>
                   <div className="text-xs text-on-surface-variant font-semibold">Conectividad Fauna</div>
-                  <div className="text-sm font-bold text-primary">Interrumpido</div>
+                  <div className="text-sm font-bold text-primary capitalize">{connectivity}</div>
                 </div>
               </div>
             </div>
@@ -180,10 +239,11 @@ export default function DiagnosticoView({ setCurrentView }: { setCurrentView: (v
             <div className="flex flex-col gap-2 z-10 text-white w-full max-w-lg">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider bg-secondary text-white px-2.5 py-0.5 rounded-full shadow-sm">Resultado del Diagnóstico</span>
-                <span className="text-xs text-on-primary-container font-semibold">Compatibilidad ecológica: 94%</span>
+                <span className="text-xs text-on-primary-container font-semibold">Compatibilidad ecológica: {compatibility}%</span>
               </div>
-              <h3 className="font-epilogue text-2xl md:text-3xl font-bold leading-tight">14 Especies Nativas Sugeridas</h3>
+              <h3 className="font-epilogue text-2xl md:text-3xl font-bold leading-tight">{suggestedSpecies} Especies Nativas Sugeridas</h3>
               <p className="text-sm text-on-primary-container mt-1">Se identificaron taxa especializados de raíces profundas (fijadores de ribera como <em className="italic opacity-80">Alnus acuminata</em>) adaptados al pH 6.2 y régimen de lluvias estacional.</p>
+              {apiOptions.dataSource === 'api' && <span className="text-xs text-on-primary-container">Mapa: {zonesCount} zonas · {mapLayersCount} capas cartográficas disponibles</span>}
             </div>
             <button 
               onClick={() => setCurrentView('catalogo')}

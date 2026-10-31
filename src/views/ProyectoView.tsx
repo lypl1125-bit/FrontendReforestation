@@ -1,6 +1,101 @@
 import { Map, Calendar, Users, Target, Activity, TreePine, Download, Share2, Play, CheckCircle2, ChevronRight, BarChart3, CloudRain } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { api, apiOptions, ApiRecord } from '../services/api';
 
-export default function ProyectoView() {
+export default function ProyectoView({ selectedSpeciesIds = [] }: { selectedSpeciesIds?: string[] }) {
+  const [projectId, setProjectId] = useState(apiOptions.projectId);
+  const [calculation, setCalculation] = useState<ApiRecord | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const refreshCalculation = async (id: string) => {
+    const result = await api.getCalculoProyecto(id);
+    setCalculation(result);
+    setLoadError('');
+  };
+
+  useEffect(() => {
+    if (apiOptions.dataSource !== 'api' || !projectId) return;
+    let active = true;
+    api.getCalculoProyecto(projectId)
+      .then((result) => { if (active) setCalculation(result); })
+      .catch((error: unknown) => { if (active) setLoadError(error instanceof Error ? error.message : 'No fue posible cargar el cálculo del proyecto.'); });
+    return () => { active = false; };
+  }, []);
+
+  const createProject = async () => {
+    setSaving(true);
+    setLoadError('');
+    try {
+      const created = await api.createProyecto(apiOptions.loteId, {
+        nombre: 'Plan de reforestación',
+        patron: 'tresbolillo',
+        espaciado_m: 3,
+        area_restaurada_m2: 125000,
+      });
+      const createdId = String(created.id ?? created.proyecto_id ?? '');
+      if (!createdId) throw new Error('La API creó el proyecto sin devolver su identificador.');
+      setProjectId(createdId);
+      if (selectedSpeciesIds.length) {
+        await api.replaceEspeciesProyecto(createdId, selectedSpeciesIds.map((especie_id, index) => ({
+          especie_id,
+          zona_plantacion: index === 0 ? 'dosel_alto' : index === 1 ? 'ripario' : 'borde',
+          cantidad: 100,
+        })));
+      }
+      await refreshCalculation(createdId);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'No fue posible crear el proyecto.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (apiOptions.dataSource === 'api') {
+    const totals = calculation?.totales as ApiRecord | undefined;
+    const project = calculation?.proyecto as ApiRecord | undefined;
+    const selected = Array.isArray(calculation?.especies) ? calculation.especies as ApiRecord[] : [];
+    const warnings = Array.isArray(calculation?.advertencias_stock) ? calculation.advertencias_stock as ApiRecord[] : [];
+    return (
+      <div className="space-y-6 animate-fade-in pb-12">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 font-display">{String(project?.nombre ?? 'Plan de reforestación')}</h1>
+            <p className="text-sm text-gray-500">{project ? `Fase: ${String(project.fase ?? 'borrador')} · Patrón: ${String(project.patron ?? 'tresbolillo')}` : 'Crea un proyecto para consultar cantidades, insumos y disponibilidad.'}</p>
+          </div>
+          <button onClick={projectId ? () => { void refreshCalculation(projectId).catch((error: unknown) => setLoadError(error instanceof Error ? error.message : 'No se pudo actualizar el cálculo.')); } : () => { void createProject(); }} disabled={saving} className="px-5 py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-60">
+            {saving ? 'Guardando…' : projectId ? 'Actualizar cálculo' : 'Crear proyecto y calcular'}
+          </button>
+        </div>
+        {loadError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
+        {!projectId && <p className="rounded-xl bg-white p-5 text-sm text-gray-600">El proyecto se crea solo cuando pulses el botón. Se asociarán las especies seleccionadas en el catálogo.</p>}
+        {totals && (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                ['Plántulas', totals.plantulas],
+                ['Compost', `${totals.compost_kg ?? 0} kg`],
+                ['Agua inicial', `${totals.agua_inicial_l ?? 0} L`],
+                ['Área calculada', `${totals.area_calculada_ha ?? 0} ha`],
+              ].map(([label, value]) => <div key={String(label)} className="bg-white p-5 rounded-2xl border border-gray-100"><p className="text-sm text-gray-500">{label}</p><p className="mt-1 text-2xl font-bold text-gray-900">{value}</p></div>)}
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-100 p-6">
+              <h2 className="font-bold text-lg text-gray-900 mb-4">Especies del proyecto</h2>
+              <div className="space-y-3">
+                {selected.map((item, index) => <div key={`${String(item.especie_id)}-${index}`} className="flex justify-between gap-4 border-b border-gray-100 pb-3 text-sm">
+                  <span>{String(item.nombre_comun ?? item.nombre_cientifico ?? item.codigo_taxon ?? item.especie_id)} <span className="text-gray-500">· {String(item.zona_plantacion ?? '')}</span></span>
+                  <strong>{String(item.plantulas ?? item.cantidad ?? 0)} plántulas</strong>
+                </div>)}
+                {!selected.length && <p className="text-sm text-gray-500">Aún no hay especies seleccionadas.</p>}
+              </div>
+            </div>
+            {warnings.length > 0 && <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-5"><h2 className="font-bold text-amber-900">Advertencias de stock</h2>{warnings.map((warning, index) => <p key={index} className="mt-2 text-sm text-amber-800">{String(warning.mensaje ?? `Stock insuficiente para ${warning.nombre_comun ?? 'una especie'}.`)}</p>)}</div>}
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in pb-12">
       {/* Header */}

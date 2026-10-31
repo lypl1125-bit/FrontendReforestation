@@ -18,3 +18,22 @@ View your app in AI Studio: https://ai.studio/apps/5d3e3547-9689-4e59-a938-5be57
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Reforest API data source
+
+The app remains in mock mode by default. Copy `.env.example` to `.env.local` and keep
+`VITE_DATA_SOURCE="mock"` to use the bundled demo data. To use the FastAPI service,
+set `VITE_DATA_SOURCE="api"` and configure:
+
+- `VITE_API_BASE_URL`: API origin/base path, such as `http://localhost:8000`.
+- `VITE_LOTE_ID`: lot identifier used for diagnosis, map, species and project requests.
+- `VITE_PROJECT_ID` (optional): existing project to load. If omitted, the project
+  screen offers to create a draft project.
+
+Restart Vite after changing environment variables. The API server must allow the
+frontend origin through CORS. API errors are shown in the relevant view; the app does
+not silently fall back to mock data when API mode is selected.
+
+The client in `src/services/api.ts` exposes the documented endpoints for basins,
+diagnostics, map zones, species/nurseries, and project planning. The mock transport
+in `src/services/mockApi.ts` mirrors those endpoints for development without a server.
