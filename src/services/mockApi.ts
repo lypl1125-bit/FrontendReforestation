@@ -8,7 +8,8 @@ import type {
 } from './api';
 
 const DEMO_DIAGNOSTIC_ID = 'e4f5a6b7-c8d9-0e1f-2a3b-4c5d6e7f8a9b';
-const DEMO_PROJECT_ID = '7b8c9d0e-1f2a-3b4c-5d6e-7f8a9b0c1d2e';
+const DEMO_LOT_ID = '59c1c9d1-e027-4c84-b869-e809023d1a18';
+const DEMO_PROJECT_ID = 'aefbd40d-4b1e-4596-a7e2-30e349ab3902';
 const DEMO_NURSERY_ID = 'v1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c';
 
 const species: ApiRecord[] = [
@@ -22,6 +23,7 @@ const species: ApiRecord[] = [
 
 const diagnosis: ApiRecord = {
   id: DEMO_DIAGNOSTIC_ID,
+  lote_id: DEMO_LOT_ID,
   fecha: '2026-04-10T14:20:00',
   perdida_cobertura_pct: 42,
   franja_riparia_legal_m: 30,
@@ -47,7 +49,7 @@ const zones: ApiRecord[] = [
 
 let project: ApiRecord = {
   id: DEMO_PROJECT_ID,
-  lote_id: 'lote-demo',
+  lote_id: DEMO_LOT_ID,
   nombre: 'Proyecto: Valle Verde',
   fase: 'borrador',
   patron: 'tresbolillo',
@@ -251,6 +253,51 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
     result = { proyecto_id: segments[1], especie_id: segments[3], eliminados: initialLength - projectSelections.length };
   } else if (segments[0] === 'proyectos' && segments[2] === 'seleccion' && segments[3] === 'calculo' && method === 'GET') {
     result = projectCalculation();
+  } else if (segments[0] === 'proyectos' && segments[2] === 'mezcla-botanica' && method === 'GET') {
+    const zoneNames: Record<string, string> = {
+      borde: 'Borde',
+      dosel_alto: 'Dosel Alto',
+      ripario: 'Ripario',
+    };
+    const details = selectedSpeciesWithDetails().map((item) => {
+      const zone = String(item.zona_plantacion);
+      return {
+        zona: zone,
+        zona_nombre: zoneNames[zone] ?? zone.replaceAll('_', ' '),
+        especie_id: item.especie_id,
+        codigo_taxon: item.codigo_taxon,
+        nombre_comun: item.nombre_comun,
+        nombre_cientifico: item.nombre_cientifico,
+        unidades: Number(item.cantidad),
+        porcentaje: 100,
+      };
+    });
+    const zoneTotals = new Map<string, { zona: string; zona_nombre: string; unidades: number }>();
+    details.forEach((item) => {
+      const current = zoneTotals.get(item.zona) ?? { zona: item.zona, zona_nombre: item.zona_nombre, unidades: 0 };
+      current.unidades += item.unidades;
+      zoneTotals.set(item.zona, current);
+    });
+    const totalPlants = details.reduce((sum, item) => sum + item.unidades, 0);
+    result = {
+      proyecto_id: segments[1],
+      zonas: Array.from(zoneTotals.values()).map((zone) => ({
+        ...zone,
+        porcentaje: totalPlants ? Number((zone.unidades / totalPlants * 100).toFixed(1)) : 0,
+      })),
+      ...(url.searchParams.get('detalle') === 'true' ? { detalle: details } : {}),
+      total_plantulas: totalPlants,
+    };
+  } else if (segments[0] === 'proyectos' && segments[2] === 'insumos' && method === 'GET') {
+    const calculation = projectCalculation();
+    const totals = calculation.totales as ApiRecord;
+    result = {
+      proyecto_id: segments[1],
+      insumos: [
+        { nombre: 'Compost', cantidad: totals.compost_kg, unidad: 'kg' },
+        { nombre: 'Agua de establecimiento', cantidad: totals.agua_inicial_l, unidad: 'L' },
+      ],
+    };
   } else return notFound(`Ruta mock no implementada: ${method} ${path}`);
 
   return result as T;

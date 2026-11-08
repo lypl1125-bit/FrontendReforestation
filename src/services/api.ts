@@ -52,11 +52,29 @@ export type FichaExportCreate = {
   generado_por?: string;
 };
 
+export type AuthUser = {
+  id?: string;
+  email: string;
+  name: string;
+};
+
+export type AuthSession = {
+  accessToken: string;
+  user: AuthUser;
+};
+
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 export type ApiOptions = {
   dataSource: 'mock' | 'api';
   baseUrl: string;
   loteId: string;
-  projectId: string;
+  testProjectId: string;
 };
 
 const env = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env;
@@ -65,10 +83,53 @@ export const apiOptions: ApiOptions = {
   dataSource: env.VITE_DATA_SOURCE === 'api' ? 'api' : 'mock',
   baseUrl: (env.VITE_API_BASE_URL ?? '').replace(/\/+$/, ''),
   loteId: env.VITE_LOTE_ID ?? 'lote-demo',
-  projectId: env.VITE_PROJECT_ID ?? '',
+  testProjectId: env.VITE_TEST_PROJECT_ID ?? '',
 };
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+let accessToken: string | null = null;
+
+export function setAccessToken(token: string | null) {
+  accessToken = token;
+}
+
+function isRecord(value: unknown): value is ApiRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function parseAuthSession(value: unknown, emailFallback: string): AuthSession | null {
+  if (!isRecord(value)) throw new Error('La API devolvió una respuesta de autenticación inválida.');
+  const data = isRecord(value.data) ? value.data : value;
+  const session = isRecord(data.session) ? data.session : data;
+  const user = isRecord(data.user) ? data.user : isRecord(session.user) ? session.user : null;
+  const token = session.access_token ?? session.accessToken ?? data.access_token;
+  if (typeof token !== 'string' || !token) return null;
+  const metadata = user && isRecord(user.user_metadata) ? user.user_metadata : {};
+  const email = String(user?.email ?? emailFallback);
+  const name = String(metadata.full_name ?? metadata.name ?? user?.full_name ?? user?.name ?? email.split('@')[0]);
+  return {
+    accessToken: token,
+    user: {
+      ...(typeof user?.id === 'string' ? { id: user.id } : {}),
+      email,
+      name,
+    },
+  };
+}
+
+export function parseAuthUser(value: unknown): AuthUser {
+  if (!isRecord(value)) throw new Error('La API devolvió un perfil de usuario inválido.');
+  const user = isRecord(value.user) ? value.user : value;
+  const metadata = isRecord(user.user_metadata) ? user.user_metadata : {};
+  const email = typeof user.email === 'string' ? user.email : '';
+  if (!email) throw new Error('La API no devolvió el correo del usuario autenticado.');
+  return {
+    ...(typeof user.id === 'string' ? { id: user.id } : {}),
+    email,
+    name: String(metadata.full_name ?? metadata.name ?? user.full_name ?? user.name ?? email.split('@')[0]),
+  };
+}
+
+async function request<T>(path: string, init?: RequestInit, authenticated = true): Promise<T> {
   if (apiOptions.dataSource === 'mock') return mockRequest<T>(path, init);
   if (!apiOptions.baseUrl) {
     throw new Error('Configura VITE_API_BASE_URL para conectarte a la API.');
@@ -79,13 +140,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       Accept: 'application/json',
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(authenticated && accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...init?.headers,
     },
   });
 
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { detail?: string } | null;
-    throw new Error(body?.detail ?? `La API respondió con ${response.status} ${response.statusText}.`);
+    const body = await response.json().catch(() => null) as { detail?: unknown; message?: unknown; error_description?: unknown } | null;
+    const message = [body?.detail, body?.message, body?.error_description].find((item) => typeof item === 'string');
+    throw new ApiError(typeof message === 'string' ? message : `La API respondió con ${response.status} ${response.statusText}.`, response.status);
   }
 
   if (response.status === 204) return undefined as T;
@@ -108,6 +171,11 @@ const query = (params: Record<string, string | number | undefined>) => {
 
 export const api = {
   health: () => request<ApiRecord>('/'),
+  login: (email: string, password: string) =>
+    request<unknown>('/auth/login', json('POST', { email, password }), false),
+  register: (email: string, password: string, fullName: string) =>
+    request<unknown>('/auth/register', json('POST', { email, password, full_name: fullName }), false),
+  getCurrentUser: () => request<unknown>('/auth/me'),
   listCuencas: () => request<ApiRecord[]>('/cuencas'),
   createCuenca: (body: ApiRecord) => request<ApiRecord>('/cuencas', json('POST', body)),
   createDiagnostico: (loteId: string, body: DiagnosticoCreate) =>
@@ -120,7 +188,7 @@ export const api = {
     request<ApiRecord>(`/diagnosticos/${encodeURIComponent(diagnosticoId)}/especies-sugeridas${query({ min, limit })}`),
   recalcularEspecies: (diagnosticoId: string) =>
     request<ApiRecord>(`/diagnosticos/${encodeURIComponent(diagnosticoId)}/recalcular`, json('POST')),
-  getCapasMapa: () => request<ApiRecord[]>('/mapa/capas'),
+  getCapasMapa: () => request<unknown>('/mapa/capas'),
   getNdvi: (loteId: string, fecha?: string) =>
     request<ApiRecord>(`/lotes/${encodeURIComponent(loteId)}/ndvi${query({ fecha })}`),
   getZonasMapa: (loteId: string, tipo?: ZonaMapaCreate['tipo']) =>
@@ -152,6 +220,10 @@ export const api = {
     request<ApiRecord>(`/proyectos/${encodeURIComponent(proyectoId)}/especies/${encodeURIComponent(especieId)}${query({ zona })}`, json('DELETE')),
   getEspeciesProyecto: (proyectoId: string) =>
     request<ApiRecord>(`/proyectos/${encodeURIComponent(proyectoId)}/especies`),
+  getMezclaBotanica: (proyectoId: string, detalle = true) =>
+    request<ApiRecord>(`/proyectos/${encodeURIComponent(proyectoId)}/mezcla-botanica${query({ detalle: String(detalle) })}`),
+  getInsumosProyecto: (proyectoId: string) =>
+    request<ApiRecord>(`/proyectos/${encodeURIComponent(proyectoId)}/insumos`),
   getCalculoProyecto: (proyectoId: string) =>
     request<ApiRecord>(`/proyectos/${encodeURIComponent(proyectoId)}/seleccion/calculo`),
 };

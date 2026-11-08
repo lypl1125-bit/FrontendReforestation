@@ -1,19 +1,22 @@
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { ArrowRight, Eye, EyeOff, Leaf, LockKeyhole, Mail, MapPin, ShieldCheck, Sprout, Trees, Users } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck, Trees, Users } from 'lucide-react';
+import { apiOptions } from '../services/api';
 
 type Props = {
   navigate: (path: string) => void;
-  onAuthenticated: (name: string, email: string) => void;
+};
+
+type LoginProps = Props & {
+  onLogin: (email: string, password: string, remember: boolean) => Promise<void>;
+  sessionError?: string;
+};
+
+type RegisterProps = Props & {
+  onRegister: (fullName: string, email: string, password: string) => Promise<boolean>;
 };
 
 const fieldClass = 'w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface placeholder:text-outline outline-none transition focus:border-secondary focus:bg-white focus:ring-2 focus:ring-secondary/20';
-const roles = [
-  { value: 'custodio', title: 'Propietario / Custodio', detail: 'Predios privados o comunitarios', icon: Trees },
-  { value: 'biologo', title: 'Biólogo / Investigador', detail: 'Monitoreo y botánica aplicada', icon: Leaf },
-  { value: 'voluntario', title: 'Voluntario / Comunidad', detail: 'Jornadas y brigadas locales', icon: Users },
-  { value: 'empresa', title: 'Empresa de impacto', detail: 'Proyectos de restauración ESG', icon: Sprout },
-];
 
 function BrandLink({ navigate }: { navigate: (path: string) => void }) {
   return <button type="button" onClick={() => navigate('/')} className="inline-flex items-center gap-2 font-epilogue text-xl font-bold tracking-tight text-primary">
@@ -78,19 +81,29 @@ function AuthLayout({ children, navigate, registration = false }: Pick<Props, 'n
   );
 }
 
-export function LoginPage({ navigate, onAuthenticated }: Props) {
+export function LoginPage({ navigate, onLogin, sessionError = '' }: LoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [remember, setRemember] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!email.trim() || !password) {
       setError('Ingresa tu correo electrónico y contraseña para continuar.');
       return;
     }
-    onAuthenticated(email.split('@')[0].replace(/[._-]/g, ' '), email.trim());
+    setError('');
+    setSubmitting(true);
+    try {
+      await onLogin(email.trim(), password, remember);
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : 'No fue posible iniciar sesión.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -110,27 +123,29 @@ export function LoginPage({ navigate, onAuthenticated }: Props) {
       <form className="space-y-4" onSubmit={submit}>
         <label className="block space-y-1.5"><span className="text-sm font-semibold">Correo electrónico</span><span className="relative block"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={18} /><input className={`${fieldClass} pl-10`} type="email" autoComplete="email" placeholder="ejemplo@reforesta.org" value={email} onChange={(event) => setEmail(event.target.value)} required /></span></label>
         <label className="block space-y-1.5"><span className="flex items-center justify-between text-sm font-semibold">Contraseña <button type="button" onClick={() => setError('La recuperación de contraseña estará disponible cuando conectemos el servicio de autenticación.')} className="text-xs font-bold text-secondary hover:underline">¿Olvidaste tu contraseña?</button></span><span className="relative block"><LockKeyhole className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={18} /><input className={`${fieldClass} pl-10 pr-12`} type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="Ingresa tu contraseña" value={password} onChange={(event) => setPassword(event.target.value)} required /><button type="button" aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 text-outline">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></label>
-        <label className="flex items-center gap-2 text-sm text-on-surface-variant"><input type="checkbox" className="rounded border-outline-variant text-primary focus:ring-secondary" /> Recordar mi sesión</label>
+        <label className="flex items-center gap-2 text-sm text-on-surface-variant"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} className="rounded border-outline-variant text-primary focus:ring-secondary" /> Recordar mi sesión</label>
+        {sessionError && <p role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">{sessionError}</p>}
         {error && <p role="alert" className="rounded-xl border border-error/30 bg-error-container/40 px-4 py-3 text-sm text-on-error-container">{error}</p>}
-        <button type="submit" className="flex w-full items-center justify-center gap-2 rounded-full bg-primary-container px-5 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-primary">Iniciar sesión <ArrowRight size={17} /></button>
+        <button type="submit" disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-full bg-primary-container px-5 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-primary disabled:cursor-wait disabled:opacity-60">{submitting ? 'Validando…' : 'Iniciar sesión'} {!submitting && <ArrowRight size={17} />}</button>
       </form>
 
-      <div className="mt-5 flex items-start gap-2 rounded-xl border border-outline-variant/30 bg-surface p-3 text-xs leading-5 text-on-surface-variant"><ShieldCheck size={17} className="mt-0.5 shrink-0 text-secondary" />Acceso de demostración: no se conecta a Supabase ni valida credenciales reales. Usa cualquier correo y contraseña.</div>
+      <div className="mt-5 flex items-start gap-2 rounded-xl border border-outline-variant/30 bg-surface p-3 text-xs leading-5 text-on-surface-variant"><ShieldCheck size={17} className="mt-0.5 shrink-0 text-secondary" />{apiOptions.dataSource === 'api' ? 'La API valida tus credenciales y protege las solicitudes con tu sesión.' : 'Acceso de demostración: acepta cualquier correo válido y contraseña no vacía.'}</div>
       <div className="mt-6 border-t border-outline-variant/50 pt-5 text-center text-sm text-on-surface-variant">¿Aún no tienes cuenta? <button onClick={() => navigate('/register')} className="font-bold text-secondary underline">Regístrate gratis</button></div>
     </AuthLayout>
   );
 }
 
-export function RegisterPage({ navigate, onAuthenticated }: Props) {
+export function RegisterPage({ navigate, onRegister }: RegisterProps) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [role, setRole] = useState(roles[0].value);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const strength = [password.length >= 8, /[A-Z]/.test(password) && /[a-z]/.test(password), /\d/.test(password), /[^A-Za-z0-9]/.test(password)].filter(Boolean).length;
   const strengthLabel = password.length === 0 ? 'Pendiente' : ['Débil', 'Básica', 'Buena', 'Fuerte', 'Muy fuerte'][strength];
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     if (password.length < 8) {
@@ -141,7 +156,20 @@ export function RegisterPage({ navigate, onAuthenticated }: Props) {
       setError('Las contraseñas no coinciden.');
       return;
     }
-    onAuthenticated(`${String(formData.get('firstName'))} ${String(formData.get('lastName'))}`.trim(), String(formData.get('email')));
+    setError('');
+    setNotice('');
+    setSubmitting(true);
+    try {
+      const fullName = `${String(formData.get('firstName'))} ${String(formData.get('lastName'))}`.trim();
+      const authenticated = await onRegister(fullName, String(formData.get('email')).trim(), password);
+      if (!authenticated) {
+        setNotice('Cuenta creada. Si la API requiere confirmar tu correo, hazlo antes de iniciar sesión.');
+      }
+    } catch (registrationError) {
+      setError(registrationError instanceof Error ? registrationError.message : 'No fue posible crear la cuenta.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -165,12 +193,6 @@ export function RegisterPage({ navigate, onAuthenticated }: Props) {
         </div>
         <label className="block space-y-1"><span className="text-xs font-semibold">Correo electrónico *</span><span className="relative block"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={17} /><input className={`${fieldClass} pl-10`} name="email" type="email" autoComplete="email" placeholder="custodio@reforesta.org" required /></span></label>
 
-        <fieldset><legend className="mb-2 text-xs font-semibold">Tipo de reforestador / custodio *</legend><div className="grid gap-2 sm:grid-cols-2">
-          {roles.map(({ value, title, detail, icon: Icon }) => <label key={value} className={`flex cursor-pointer items-start gap-2 rounded-xl border p-3 transition ${role === value ? 'border-primary bg-surface-container' : 'border-outline-variant bg-surface-bright hover:bg-surface-container-low'}`}><input className="mt-1 accent-primary" type="radio" name="role" value={value} checked={role === value} onChange={() => setRole(value)} /><Icon size={16} className="mt-0.5 shrink-0 text-secondary" /><span><strong className="block text-xs">{title}</strong><small className="text-[10px] text-on-surface-variant">{detail}</small></span></label>)}
-        </div></fieldset>
-
-        <label className="block space-y-1"><span className="flex items-center justify-between text-xs font-semibold">Ubicación principal / municipio <small className="font-normal text-outline">Opcional</small></span><span className="relative block"><MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={17} /><input className={`${fieldClass} pl-10`} name="location" placeholder="Ej. Santa Elena, Antioquia" /></span></label>
-
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block space-y-1"><span className="text-xs font-semibold">Contraseña *</span><span className="relative block"><LockKeyhole className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={16} /><input className={`${fieldClass} pl-10 pr-10`} name="password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder="Mínimo 8 caracteres" value={password} onChange={(event) => setPassword(event.target.value)} required /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 text-outline" aria-label="Mostrar u ocultar contraseña">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></span></label>
           <label className="block space-y-1"><span className="text-xs font-semibold">Confirmar contraseña *</span><input className={fieldClass} name="confirmPassword" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder="Repite la contraseña" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></label>
@@ -180,11 +202,12 @@ export function RegisterPage({ navigate, onAuthenticated }: Props) {
           <div className="grid grid-cols-4 gap-1">{[0, 1, 2, 3].map((item) => <span key={item} className={`h-1 rounded-full ${item < strength ? strength > 2 ? 'bg-secondary' : 'bg-amber-500' : 'bg-outline-variant/50'}`} />)}</div>
         </div>
         <label className="flex items-start gap-2 text-xs leading-5 text-on-surface-variant"><input className="mt-1 rounded border-outline-variant text-primary focus:ring-secondary" type="checkbox" required /><span>Acepto los <a href="#terms" className="font-semibold text-secondary underline">Términos de Conservación</a> y la Política de Privacidad.</span></label>
+        {notice && <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">{notice} <button type="button" onClick={() => navigate('/login')} className="font-bold underline">Ir al inicio de sesión</button></p>}
         {error && <p role="alert" className="rounded-xl border border-error/30 bg-error-container/40 px-4 py-2.5 text-sm text-on-error-container">{error}</p>}
-        <button type="submit" className="flex w-full items-center justify-center gap-2 rounded-full bg-primary-container px-5 py-3 text-sm font-bold text-white shadow-md transition hover:bg-primary">Crear cuenta gratuita <ArrowRight size={17} /></button>
+        <button type="submit" disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-full bg-primary-container px-5 py-3 text-sm font-bold text-white shadow-md transition hover:bg-primary disabled:cursor-wait disabled:opacity-60">{submitting ? 'Creando cuenta…' : 'Crear cuenta gratuita'} {!submitting && <ArrowRight size={17} />}</button>
       </form>
 
-      <div className="mt-4 flex items-start gap-2 rounded-xl border border-outline-variant/30 bg-surface p-3 text-xs leading-5 text-on-surface-variant"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-secondary" />Registro de demostración: tus datos de acceso no se guardan y no se conecta a Supabase.</div>
+      <div className="mt-4 flex items-start gap-2 rounded-xl border border-outline-variant/30 bg-surface p-3 text-xs leading-5 text-on-surface-variant"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-secondary" />{apiOptions.dataSource === 'api' ? 'La cuenta se registra en la API con tu nombre, correo y contraseña.' : 'Registro de demostración: no se crea una cuenta en el backend.'}</div>
       <div className="mt-5 border-t border-outline-variant/50 pt-4 text-center text-sm text-on-surface-variant">¿Ya tienes una cuenta? <button onClick={() => navigate('/login')} className="font-bold text-secondary underline">Inicia sesión aquí</button></div>
     </AuthLayout>
   );

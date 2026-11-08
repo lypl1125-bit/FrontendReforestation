@@ -1,4 +1,4 @@
-import { Compass, Leaf, Book, TreePine } from 'lucide-react';
+import { Compass, Leaf, TreePine } from 'lucide-react';
 import { ViewState } from '../types';
 
 interface Props {
@@ -10,7 +10,6 @@ export default function BottomNav({ currentView, setCurrentView }: Props) {
   const navItems = [
     { id: 'diagnostico', label: 'Ubicación', icon: Compass },
     { id: 'catalogo', label: 'Especies', icon: Leaf },
-    { id: 'detalle', label: 'Guía', icon: Book },
     { id: 'proyecto', label: 'Proyecto', icon: TreePine },
   ] as const;
 

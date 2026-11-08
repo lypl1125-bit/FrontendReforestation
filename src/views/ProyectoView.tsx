@@ -2,24 +2,66 @@ import { Map, Calendar, Users, Target, Activity, TreePine, Download, Share2, Pla
 import { useEffect, useState } from 'react';
 import { api, apiOptions, ApiRecord } from '../services/api';
 
+function objectList(value: unknown): ApiRecord[] {
+  return Array.isArray(value) ? value.filter((item): item is ApiRecord => typeof item === 'object' && item !== null && !Array.isArray(item)) : [];
+}
+
+function firstString(record: ApiRecord, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function numericValue(record: ApiRecord, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  }
+  return null;
+}
+
+function formatNumber(value: number): string {
+  return value.toLocaleString('es-CO', { maximumFractionDigits: 1 });
+}
+
 export default function ProyectoView({ selectedSpeciesIds = [] }: { selectedSpeciesIds?: string[] }) {
-  const [projectId, setProjectId] = useState(apiOptions.projectId);
+  const [projectId, setProjectId] = useState(apiOptions.testProjectId);
   const [calculation, setCalculation] = useState<ApiRecord | null>(null);
+  const [botanicalMix, setBotanicalMix] = useState<ApiRecord | null>(null);
+  const [supplies, setSupplies] = useState<ApiRecord | null>(null);
   const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const refreshCalculation = async (id: string) => {
-    const result = await api.getCalculoProyecto(id);
-    setCalculation(result);
-    setLoadError('');
+  const loadProjectData = async (id: string) => Promise.allSettled([
+    api.getCalculoProyecto(id),
+    api.getMezclaBotanica(id, true),
+    api.getInsumosProyecto(id),
+  ]);
+
+  const applyProjectData = (results: PromiseSettledResult<ApiRecord>[]) => {
+    const errors: string[] = [];
+    const [calculationResult, mixResult, suppliesResult] = results;
+    if (calculationResult.status === 'fulfilled') setCalculation(calculationResult.value);
+    else errors.push(calculationResult.reason instanceof Error ? calculationResult.reason.message : 'No fue posible cargar el cálculo del proyecto.');
+    if (mixResult.status === 'fulfilled') setBotanicalMix(mixResult.value);
+    else errors.push(mixResult.reason instanceof Error ? mixResult.reason.message : 'No fue posible cargar la mezcla botánica.');
+    if (suppliesResult.status === 'fulfilled') setSupplies(suppliesResult.value);
+    else errors.push(suppliesResult.reason instanceof Error ? suppliesResult.reason.message : 'No fue posible cargar los insumos.');
+    setLoadError(errors.join(' '));
+  };
+
+  const refreshProject = async (id: string) => {
+    applyProjectData(await loadProjectData(id));
   };
 
   useEffect(() => {
     if (apiOptions.dataSource !== 'api' || !projectId) return;
     let active = true;
-    api.getCalculoProyecto(projectId)
-      .then((result) => { if (active) setCalculation(result); })
-      .catch((error: unknown) => { if (active) setLoadError(error instanceof Error ? error.message : 'No fue posible cargar el cálculo del proyecto.'); });
+    loadProjectData(projectId)
+      .then((results) => { if (active) applyProjectData(results); });
     return () => { active = false; };
   }, []);
 
@@ -43,7 +85,7 @@ export default function ProyectoView({ selectedSpeciesIds = [] }: { selectedSpec
           cantidad: 100,
         })));
       }
-      await refreshCalculation(createdId);
+      await refreshProject(createdId);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'No fue posible crear el proyecto.');
     } finally {
@@ -56,6 +98,13 @@ export default function ProyectoView({ selectedSpeciesIds = [] }: { selectedSpec
     const project = calculation?.proyecto as ApiRecord | undefined;
     const selected = Array.isArray(calculation?.especies) ? calculation.especies as ApiRecord[] : [];
     const warnings = Array.isArray(calculation?.advertencias_stock) ? calculation.advertencias_stock as ApiRecord[] : [];
+    const mixZones = objectList(botanicalMix?.zonas);
+    const mixDetails = objectList(botanicalMix?.detalle);
+    const mixTotal = numericValue(botanicalMix ?? {}, ['total_plantulas', 'unidades_totales', 'total_unidades'])
+      ?? mixZones.reduce((sum, zone) => sum + (numericValue(zone, ['unidades', 'cantidad', 'total']) ?? 0), 0);
+    const supplyRows = Array.isArray(supplies)
+      ? objectList(supplies)
+      : objectList(supplies?.insumos ?? supplies?.items ?? supplies?.materiales ?? supplies?.resultados);
     return (
       <div className="space-y-6 animate-fade-in pb-12">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -63,8 +112,8 @@ export default function ProyectoView({ selectedSpeciesIds = [] }: { selectedSpec
             <h1 className="text-2xl font-bold text-gray-900 font-display">{String(project?.nombre ?? 'Plan de reforestación')}</h1>
             <p className="text-sm text-gray-500">{project ? `Fase: ${String(project.fase ?? 'borrador')} · Patrón: ${String(project.patron ?? 'tresbolillo')}` : 'Crea un proyecto para consultar cantidades, insumos y disponibilidad.'}</p>
           </div>
-          <button onClick={projectId ? () => { void refreshCalculation(projectId).catch((error: unknown) => setLoadError(error instanceof Error ? error.message : 'No se pudo actualizar el cálculo.')); } : () => { void createProject(); }} disabled={saving} className="px-5 py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-60">
-            {saving ? 'Guardando…' : projectId ? 'Actualizar cálculo' : 'Crear proyecto y calcular'}
+          <button onClick={projectId ? () => { void refreshProject(projectId); } : () => { void createProject(); }} disabled={saving} className="px-5 py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-60">
+            {saving ? 'Guardando…' : projectId ? 'Actualizar datos' : 'Crear proyecto y calcular'}
           </button>
         </div>
         {loadError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
@@ -91,6 +140,82 @@ export default function ProyectoView({ selectedSpeciesIds = [] }: { selectedSpec
             </div>
             {warnings.length > 0 && <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-5"><h2 className="font-bold text-amber-900">Advertencias de stock</h2>{warnings.map((warning, index) => <p key={index} className="mt-2 text-sm text-amber-800">{String(warning.mensaje ?? `Stock insuficiente para ${warning.nombre_comun ?? 'una especie'}.`)}</p>)}</div>}
           </>
+        )}
+        {projectId && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <section className="bg-white rounded-2xl border border-gray-100 p-6">
+              <div className="mb-5 flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-bold text-lg text-gray-900">Mezcla botánica</h2>
+                  <p className="mt-1 text-sm text-gray-500">Así se distribuyen las plantas entre las zonas del predio.</p>
+                </div>
+                {botanicalMix && <span className="shrink-0 rounded-full bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-800">{formatNumber(mixTotal)} plantas</span>}
+              </div>
+              {!botanicalMix && <p role="status" className="text-sm text-gray-500">Cargando distribución de especies…</p>}
+              {botanicalMix && mixZones.length === 0 && <p className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">Este proyecto todavía no tiene una mezcla botánica para mostrar.</p>}
+              <div className="space-y-4">
+                {mixZones.map((zone, index) => {
+                  const zoneId = String(zone.zona ?? zone.zona_nombre ?? index);
+                  const zoneName = firstString(zone, ['zona_nombre', 'nombre', 'zona']) ?? `Zona ${index + 1}`;
+                  const units = numericValue(zone, ['unidades', 'cantidad', 'total']) ?? 0;
+                  const percentage = Math.min(100, Math.max(0, numericValue(zone, ['porcentaje', 'porcentaje_total', 'pct']) ?? 0));
+                  const zoneDetails = mixDetails.filter((detail) => String(detail.zona ?? detail.zona_nombre ?? '') === String(zone.zona ?? zone.zona_nombre ?? ''));
+                  return (
+                    <div key={`${zoneId}-${index}`} className="rounded-xl border border-gray-100 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-semibold text-gray-900">{zoneName}</h3>
+                          <p className="mt-1 text-sm text-gray-600">{formatNumber(units)} {units === 1 ? 'planta' : 'plantas'}</p>
+                        </div>
+                        <span className="text-sm font-bold text-primary">{formatNumber(percentage)}%</span>
+                      </div>
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-gray-100" role="progressbar" aria-label={`${zoneName}: ${formatNumber(percentage)} por ciento`} aria-valuenow={percentage} aria-valuemin={0} aria-valuemax={100}>
+                        <div className="h-full rounded-full bg-emerald-600" style={{ width: `${percentage}%` }} />
+                      </div>
+                      {zoneDetails.length > 0 && <ul className="mt-3 divide-y divide-gray-100">
+                        {zoneDetails.map((detail, detailIndex) => {
+                          const speciesName = firstString(detail, ['nombre_comun', 'nombre_cientifico', 'codigo_taxon']) ?? 'Especie';
+                          const scientificName = firstString(detail, ['nombre_cientifico']);
+                          const detailUnits = numericValue(detail, ['unidades', 'cantidad', 'plantulas']);
+                          const detailPercentage = numericValue(detail, ['porcentaje', 'porcentaje_zona', 'pct']);
+                          return <li key={`${String(detail.especie_id ?? speciesName)}-${detailIndex}`} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-2 text-sm first:pt-0 last:pb-0">
+                            <span className="text-gray-800">{speciesName}{scientificName && scientificName !== speciesName && <span className="ml-1 italic text-gray-500">({scientificName})</span>}</span>
+                            <span className="text-gray-600">{detailUnits !== null ? `${formatNumber(detailUnits)} plantas` : ''}{detailPercentage !== null ? ` · ${formatNumber(detailPercentage)}% de la zona` : ''}</span>
+                          </li>;
+                        })}
+                      </ul>}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+            <section className="bg-white rounded-2xl border border-gray-100 p-6">
+              <div className="mb-5">
+                <h2 className="font-bold text-lg text-gray-900">Insumos</h2>
+                <p className="mt-1 text-sm text-gray-500">Materiales necesarios para llevar a cabo la siembra.</p>
+              </div>
+              {!supplies && <p role="status" className="text-sm text-gray-500">Cargando lista de insumos…</p>}
+              {supplies && supplyRows.length === 0 && <p className="rounded-xl bg-gray-50 p-4 text-sm text-gray-600">No hay insumos registrados para este proyecto.</p>}
+              <ul className="divide-y divide-gray-100">
+                {supplyRows.map((item, index) => {
+                  const name = firstString(item, ['nombre', 'nombre_insumo', 'insumo', 'material', 'descripcion', 'tipo']) ?? `Insumo ${index + 1}`;
+                  const quantity = numericValue(item, ['cantidad', 'unidades', 'cantidad_requerida', 'total']);
+                  const unit = firstString(item, ['unidad', 'unidad_medida', 'unidad_nombre']);
+                  const cost = numericValue(item, ['costo_estimado', 'costo_total', 'precio']);
+                  return <li key={String(item.id ?? item.insumo_id ?? `${name}-${index}`)} className="flex items-start justify-between gap-4 py-4 first:pt-0 last:pb-0">
+                    <div>
+                      <h3 className="font-semibold text-gray-900">{name}</h3>
+                      {firstString(item, ['categoria', 'nota', 'observacion']) && <p className="mt-1 text-xs text-gray-500">{firstString(item, ['categoria', 'nota', 'observacion'])}</p>}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      {quantity !== null && <p className="font-bold text-primary">{formatNumber(quantity)}{unit ? ` ${unit}` : ''}</p>}
+                      {cost !== null && <p className="mt-1 text-xs text-gray-500">{new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(cost)}</p>}
+                    </div>
+                  </li>;
+                })}
+              </ul>
+            </section>
+          </div>
         )}
       </div>
     );
