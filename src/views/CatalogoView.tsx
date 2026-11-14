@@ -55,7 +55,7 @@ function fromApi(item: ApiRecord): CatalogSpecies {
   };
 }
 
-export default function CatalogoView({ setCurrentView, setSelectedSpeciesId, selectedSpeciesIds, setSelectedSpeciesIds }: { setCurrentView: (v: ViewState) => void; setSelectedSpeciesId: (id: string) => void; selectedSpeciesIds: string[]; setSelectedSpeciesIds: (ids: string[]) => void }) {
+export default function CatalogoView({ setCurrentView, setSelectedSpeciesId, selectedSpeciesIds, setSelectedSpeciesIds, lotId = apiOptions.loteId }: { setCurrentView: (v: ViewState) => void; setSelectedSpeciesId: (id: string) => void; selectedSpeciesIds: string[]; setSelectedSpeciesIds: (ids: string[]) => void; lotId?: string }) {
   const [speciesList, setSpeciesList] = useState<CatalogSpecies[]>(apiOptions.dataSource === 'mock'
     ? mockSpecies.map((item) => ({ ...item, category: item.tag, filterTags: item.features }))
     : []);
@@ -73,7 +73,7 @@ export default function CatalogoView({ setCurrentView, setSelectedSpeciesId, sel
     let active = true;
     const loadSpecies = async () => {
       try {
-        const current = await api.getDiagnosticoVigente(apiOptions.loteId);
+        const current = await api.getDiagnosticoVigente(lotId);
         const diagnosticId = String(current.id ?? '');
         if (!diagnosticId) throw new Error('El diagnóstico vigente no incluye su identificador.');
         const result = await api.getEspeciesSugeridas(diagnosticId, 50);
@@ -91,7 +91,7 @@ export default function CatalogoView({ setCurrentView, setSelectedSpeciesId, sel
     };
     void loadSpecies();
     return () => { active = false; };
-  }, []);
+  }, [lotId]);
 
   const categories = useMemo(() => [...new Set<string>(speciesList.flatMap((item) => item.category ? [item.category] : []))].sort((a, b) => a.localeCompare(b, 'es')), [speciesList]);
   const availableTags = useMemo(() => [...new Set<string>(speciesList.flatMap((item) => item.filterTags))].sort((a, b) => a.localeCompare(b, 'es')), [speciesList]);

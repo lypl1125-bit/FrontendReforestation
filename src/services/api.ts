@@ -41,6 +41,22 @@ export type ProyectoCreate = {
   hoyo_profundidad_cm?: number;
 };
 
+export type PredioCreate = {
+  nombre: string;
+  municipio: string;
+  departamento: string;
+  area_ha: number;
+  primer_lote: {
+    nombre: string;
+    area_ha: number;
+  };
+};
+
+export type LoteCreate = {
+  nombre: string;
+  area_ha: number;
+};
+
 export type EspecieSeleccionItem = {
   especie_id: string;
   zona_plantacion: string;
@@ -75,6 +91,7 @@ export type ApiOptions = {
   baseUrl: string;
   loteId: string;
   testProjectId: string;
+  googleAuthEnabled: boolean;
 };
 
 const env = (import.meta as ImportMeta & { env: Record<string, string | undefined> }).env;
@@ -84,6 +101,7 @@ export const apiOptions: ApiOptions = {
   baseUrl: (env.VITE_API_BASE_URL ?? '').replace(/\/+$/, ''),
   loteId: env.VITE_LOTE_ID ?? 'lote-demo',
   testProjectId: env.VITE_TEST_PROJECT_ID ?? '',
+  googleAuthEnabled: env.VITE_GOOGLE_AUTH_ENABLED === 'true',
 };
 
 let accessToken: string | null = null;
@@ -175,7 +193,16 @@ export const api = {
     request<unknown>('/auth/login', json('POST', { email, password }), false),
   register: (email: string, password: string, fullName: string) =>
     request<unknown>('/auth/register', json('POST', { email, password, full_name: fullName }), false),
+  startGoogleAuth: () => request<{ authorization_url: string }>('/auth/google', undefined, false),
+  exchangeGoogleCode: (code: string) =>
+    request<unknown>('/auth/google/callback', json('POST', { code }), false),
   getCurrentUser: () => request<unknown>('/auth/me'),
+  listLotes: () => request<unknown>('/lotes'),
+  createPredio: (body: PredioCreate) => request<ApiRecord>('/predios', json('POST', body)),
+  createLote: (predioId: string, body: LoteCreate) =>
+    request<ApiRecord>(`/predios/${encodeURIComponent(predioId)}/lotes`, json('POST', body)),
+  listProyectos: (loteId: string) =>
+    request<unknown>(`/lotes/${encodeURIComponent(loteId)}/proyectos`),
   listCuencas: () => request<ApiRecord[]>('/cuencas'),
   createCuenca: (body: ApiRecord) => request<ApiRecord>('/cuencas', json('POST', body)),
   createDiagnostico: (loteId: string, body: DiagnosticoCreate) =>

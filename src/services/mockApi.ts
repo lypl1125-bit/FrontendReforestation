@@ -12,6 +12,17 @@ const DEMO_LOT_ID = '59c1c9d1-e027-4c84-b869-e809023d1a18';
 const DEMO_PROJECT_ID = 'aefbd40d-4b1e-4596-a7e2-30e349ab3902';
 const DEMO_NURSERY_ID = 'v1a2b3c4-d5e6-7f8a-9b0c-1d2e3f4a5b6c';
 
+let lots: ApiRecord[] = [{
+  id: DEMO_LOT_ID,
+  predio_id: 'predio-demo',
+  nombre: 'Lote demostrativo',
+  predio_nombre: 'Predio Valle Verde',
+  area_ha: 12.5,
+  municipio: 'Ibagué',
+  departamento: 'Tolima',
+}];
+let projects: ApiRecord[] = [];
+
 const species: ApiRecord[] = [
   { especie_id: 'a1b20000-0000-4000-8000-000000000001', codigo_taxon: 'HAN-CHR', nombre_comun: 'Guayacán Rosado', nombre_cientifico: 'Handroanthus chrysanthus', compatibilidad_pct: 98, es_nativa: true, estrato: 'Dosel', grupo_funcional: 'Captura CO2' },
   { especie_id: 'a1b20000-0000-4000-8000-000000000002', codigo_taxon: 'ALN-ACU', nombre_comun: 'Aliso Andino', nombre_cientifico: 'Alnus acuminata', compatibilidad_pct: 95, es_nativa: true, estrato: 'Fijadora N2', grupo_funcional: 'Control de erosión' },
@@ -57,6 +68,7 @@ let project: ApiRecord = {
   area_restaurada_m2: 125000,
   vivero_id: DEMO_NURSERY_ID,
 };
+projects.push(project);
 let projectSelections: EspecieSeleccionItem[] = [
   { especie_id: species[0].especie_id as string, zona_plantacion: 'dosel_alto', cantidad: 2475 },
   { especie_id: species[1].especie_id as string, zona_plantacion: 'ripario', cantidad: 1350 },
@@ -161,6 +173,29 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
   let result: unknown;
 
   if (method === 'GET' && segments.length === 0) result = { Msg: 'Welcome to the Reforestation API!' };
+  else if (segments.join('/') === 'lotes' && method === 'GET') result = { lotes: [...lots] };
+  else if (segments.join('/') === 'predios' && method === 'POST') {
+    const predio = body as ApiRecord;
+    const firstLot = predio.primer_lote as ApiRecord;
+    const predioId = crypto.randomUUID();
+    const lot = {
+      id: crypto.randomUUID(),
+      predio_id: predioId,
+      nombre: String(firstLot?.nombre ?? 'Lote principal'),
+      predio_nombre: String(predio.nombre ?? 'Mi predio'),
+      area_ha: Number(firstLot?.area_ha ?? predio.area_ha ?? 0),
+      municipio: String(predio.municipio ?? ''),
+      departamento: String(predio.departamento ?? ''),
+    };
+    lots = [...lots, lot];
+    result = { predio: { ...predio, id: predioId }, lote: lot };
+  } else if (segments[0] === 'predios' && segments[2] === 'lotes' && method === 'POST') {
+    const lot = { id: crypto.randomUUID(), predio_id: segments[1], ...body };
+    lots = [...lots, lot];
+    result = lot;
+  } else if (segments[0] === 'lotes' && segments[2] === 'proyectos' && method === 'GET') {
+    result = { proyectos: projects.filter((item) => item.lote_id === segments[1]) };
+  }
   else if (segments.join('/') === 'cuencas' && method === 'GET') {
     result = [{ id: 'cuenca-demo', nombre: 'Cuenca del Río Coello', descripcion: 'Zona de recarga hídrica', elevacion_msnm: 1850, altitud_min_msnm: 1200, altitud_max_msnm: 3200, geom: null }];
   } else if (segments.join('/') === 'cuencas' && method === 'POST') result = { id: crypto.randomUUID(), ...body };
@@ -228,6 +263,7 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
   } else if (segments[0] === 'lotes' && segments[2] === 'proyectos' && method === 'POST') {
     const input = body as ProyectoCreate;
     project = { ...input, id: crypto.randomUUID(), lote_id: segments[1], fase: 'borrador', patron: input.patron ?? 'tresbolillo', espaciado_m: input.espaciado_m ?? 3 };
+    projects = [...projects, project];
     projectSelections = [];
     result = { ...project };
   } else if (segments[0] === 'proyectos' && segments[2] === 'especies' && segments.length === 3 && method === 'GET') {

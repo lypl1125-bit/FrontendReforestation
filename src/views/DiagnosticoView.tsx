@@ -130,7 +130,7 @@ function ZoneMap({ allFeatures, visibleFeatures, baseMap, locateRequest }: {
   );
 }
 
-export default function DiagnosticoView({ setCurrentView }: { setCurrentView: (v: ViewState) => void }) {
+export default function DiagnosticoView({ setCurrentView, lotId = apiOptions.loteId }: { setCurrentView: (v: ViewState) => void; lotId?: string }) {
   const [diagnosis, setDiagnosis] = useState<ApiRecord | null>(null);
   const [basin, setBasin] = useState<ApiRecord | null>(null);
   const [zoneFeatures, setZoneFeatures] = useState<ZoneFeature[]>([]);
@@ -145,10 +145,10 @@ export default function DiagnosticoView({ setCurrentView }: { setCurrentView: (v
     let active = true;
     const load = async () => {
       const results = await Promise.allSettled([
-        api.getDiagnosticoVigente(apiOptions.loteId),
+        api.getDiagnosticoVigente(lotId),
         api.listCuencas(),
         api.getCapasMapa(),
-        api.getZonasMapa(apiOptions.loteId),
+        api.getZonasMapa(lotId),
       ]);
       if (!active) return;
       const errors = results.flatMap((result) => result.status === 'rejected' ? [result.reason instanceof Error ? result.reason.message : 'Error al cargar datos de la API.'] : []);
@@ -163,7 +163,7 @@ export default function DiagnosticoView({ setCurrentView }: { setCurrentView: (v
     };
     void load();
     return () => { active = false; };
-  }, []);
+  }, [lotId]);
 
   const visibleFeatures = useMemo(() => {
     if (!activeObjective) return zoneFeatures;
@@ -219,7 +219,7 @@ export default function DiagnosticoView({ setCurrentView }: { setCurrentView: (v
               <MapPin className="text-primary-container w-5 h-5 ml-1 shrink-0" />
               <div className="min-w-0 flex-1">
                 <span className="block text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">Predio seleccionado</span>
-                <span className="block truncate text-xs font-semibold text-on-surface">{apiOptions.loteId}</span>
+                <span className="block truncate text-xs font-semibold text-on-surface">{lotId}</span>
               </div>
               <button
                 type="button"

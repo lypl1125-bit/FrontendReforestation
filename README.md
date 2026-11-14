@@ -54,6 +54,7 @@ option is shown. The zones endpoint does not provide the lot's cadastral boundar
 
 - `/` is the public landing page.
 - `/login` calls `POST /auth/login`; `/register` calls `POST /auth/register`.
+- After registration, the form is replaced by a confirmation card with a direct link to login. If the registration response contains no session, the user is prompted to confirm their email first.
 - Authenticated API requests send the returned Supabase access token as a bearer token.
 - `GET /auth/me` validates saved sessions on startup. The “remember me” option stores
   the access token in local storage; otherwise it is limited to the browser session.
@@ -62,13 +63,25 @@ option is shown. The zones endpoint does not provide the lot's cadastral boundar
   asks the user to confirm the email (if required) and then sign in.
 - Logout removes the local token. The API does not currently document a refresh or
   logout endpoint, so an expired access token requires signing in again.
+- Google sign-in is shown as available only when API mode is active and
+  `VITE_GOOGLE_AUTH_ENABLED="true"`. The frontend starts the OAuth flow through
+  `GET /auth/google`, receives a one-time callback code at `/auth/callback`, and
+  exchanges it using `POST /auth/google/callback`. Google client secrets must remain
+  on the backend; see [BACKEND_AUTH_AND_WORKSPACES.md](./BACKEND_AUTH_AND_WORKSPACES.md).
 
 ## Lot selection and test data
 
-Until the API exposes `GET /lotes`, `VITE_LOTE_ID` selects one temporary test lot for
-requests that require a lot ID. It is not a user or tenant setting, and it does not
-create a lot or seed its database records. The API must already contain a lot with
-that ID and the related diagnostic/map data for those screens to work.
+In API mode the authenticated user's lots are loaded from `GET /lotes`; the top bar
+lets the user switch the active lot and its project. New users are guided through
+creating a predio and first lot, then an initial project. Additional lots can be
+added to a registered predio, and projects can be created from the project planner.
+The backend must authorize all these resources against the authenticated user.
+
+`VITE_LOTE_ID` remains only as a temporary fallback/test value for the diagnostic,
+species, and map views when using seeded demo workflows. It is not a user or tenant
+setting, and it does not create a lot or seed its database records. The API must
+already contain a lot with that ID and the related diagnostic/map data for those
+screens to work.
 
 The species-suggestions endpoint supports a minimum compatibility (`min`) and result
 limit (`limit`). Catalog filters for functional groups/ecosystem services are applied

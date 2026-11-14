@@ -1,13 +1,13 @@
 import { Droplet, Compass, Leaf, TreePine } from 'lucide-react';
 import { ViewState } from '../types';
-import { apiOptions } from '../services/api';
 
 interface Props {
   currentView: ViewState;
   setCurrentView: (v: ViewState) => void;
+  lotName?: string;
 }
 
-export default function Sidebar({ currentView, setCurrentView }: Props) {
+export default function Sidebar({ currentView, setCurrentView, lotName = 'Selecciona un lote' }: Props) {
   const navItems = [
     { id: 'diagnostico', label: 'Diagnóstico & Ubicación', icon: Compass },
     { id: 'catalogo', label: 'Catálogo de Especies', icon: Leaf },
@@ -31,7 +31,7 @@ export default function Sidebar({ currentView, setCurrentView }: Props) {
               <Droplet className="text-secondary w-5 h-5" />
               <div className="flex flex-col">
                 <span className="text-xs text-on-surface-variant font-semibold">Predio de trabajo</span>
-                <span className="text-xs text-on-surface font-semibold break-all">{apiOptions.loteId}</span>
+                <span className="text-xs text-on-surface font-semibold break-all">{lotName}</span>
               </div>
             </div>
           </div>

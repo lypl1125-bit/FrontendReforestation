@@ -27,13 +27,14 @@ function formatNumber(value: number): string {
   return value.toLocaleString('es-CO', { maximumFractionDigits: 1 });
 }
 
-export default function ProyectoView({ selectedSpeciesIds = [] }: { selectedSpeciesIds?: string[] }) {
-  const [projectId, setProjectId] = useState(apiOptions.testProjectId);
+export default function ProyectoView({ selectedSpeciesIds = [], lotId = apiOptions.loteId, selectedProjectId = '', projects = [], onProjectSelected, onProjectCreated }: { selectedSpeciesIds?: string[]; lotId?: string; selectedProjectId?: string; projects?: ApiRecord[]; onProjectSelected?: (id: string) => void; onProjectCreated?: (project: ApiRecord) => void }) {
+  const [projectId, setProjectId] = useState(selectedProjectId || apiOptions.testProjectId);
   const [calculation, setCalculation] = useState<ApiRecord | null>(null);
   const [botanicalMix, setBotanicalMix] = useState<ApiRecord | null>(null);
   const [supplies, setSupplies] = useState<ApiRecord | null>(null);
   const [loadError, setLoadError] = useState('');
   const [saving, setSaving] = useState(false);
+  const activeProject = projects.find((item) => String(item.id ?? item.proyecto_id ?? '') === selectedProjectId);
 
   const loadProjectData = async (id: string) => Promise.allSettled([
     api.getCalculoProyecto(id),
@@ -58,18 +59,26 @@ export default function ProyectoView({ selectedSpeciesIds = [] }: { selectedSpec
   };
 
   useEffect(() => {
+    setProjectId(selectedProjectId || '');
+  }, [selectedProjectId]);
+
+  useEffect(() => {
     if (apiOptions.dataSource !== 'api' || !projectId) return;
     let active = true;
+    setCalculation(null);
+    setBotanicalMix(null);
+    setSupplies(null);
+    setLoadError('');
     loadProjectData(projectId)
       .then((results) => { if (active) applyProjectData(results); });
     return () => { active = false; };
-  }, []);
+  }, [projectId]);
 
   const createProject = async () => {
     setSaving(true);
     setLoadError('');
     try {
-      const created = await api.createProyecto(apiOptions.loteId, {
+      const created = await api.createProyecto(lotId, {
         nombre: 'Plan de reforestación',
         patron: 'tresbolillo',
         espaciado_m: 3,
@@ -78,6 +87,7 @@ export default function ProyectoView({ selectedSpeciesIds = [] }: { selectedSpec
       const createdId = String(created.id ?? created.proyecto_id ?? '');
       if (!createdId) throw new Error('La API creó el proyecto sin devolver su identificador.');
       setProjectId(createdId);
+      onProjectCreated?.(created);
       if (selectedSpeciesIds.length) {
         await api.replaceEspeciesProyecto(createdId, selectedSpeciesIds.map((especie_id, index) => ({
           especie_id,
@@ -112,9 +122,16 @@ export default function ProyectoView({ selectedSpeciesIds = [] }: { selectedSpec
             <h1 className="text-2xl font-bold text-gray-900 font-display">{String(project?.nombre ?? 'Plan de reforestación')}</h1>
             <p className="text-sm text-gray-500">{project ? `Fase: ${String(project.fase ?? 'borrador')} · Patrón: ${String(project.patron ?? 'tresbolillo')}` : 'Crea un proyecto para consultar cantidades, insumos y disponibilidad.'}</p>
           </div>
-          <button onClick={projectId ? () => { void refreshProject(projectId); } : () => { void createProject(); }} disabled={saving} className="px-5 py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-60">
-            {saving ? 'Guardando…' : projectId ? 'Actualizar datos' : 'Crear proyecto y calcular'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {projects.length > 1 && <label className="sr-only" htmlFor="project-view-selector">Proyecto activo</label>}
+            {projects.length > 1 && <select id="project-view-selector" aria-label="Cambiar proyecto" value={selectedProjectId} onChange={(event) => onProjectSelected?.(event.target.value)} className="max-w-48 rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm font-semibold text-primary">
+              {projects.map((item) => <option key={String(item.id ?? item.proyecto_id)} value={String(item.id ?? item.proyecto_id)}>{String(item.nombre ?? 'Proyecto')}</option>)}
+            </select>}
+            {projectId && <button onClick={() => { setProjectId(''); setCalculation(null); setBotanicalMix(null); setSupplies(null); }} className="rounded-xl border border-primary px-4 py-3 font-semibold text-primary">Crear otro proyecto</button>}
+            <button onClick={projectId ? () => { void refreshProject(projectId); } : () => { void createProject(); }} disabled={saving} className="px-5 py-3 bg-primary text-white rounded-xl font-semibold disabled:opacity-60">
+              {saving ? 'Guardando…' : projectId ? 'Actualizar datos' : 'Crear proyecto y calcular'}
+            </button>
+          </div>
         </div>
         {loadError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>}
         {!projectId && <p className="rounded-xl bg-white p-5 text-sm text-gray-600">El proyecto se crea solo cuando pulses el botón. Se asociarán las especies seleccionadas en el catálogo.</p>}
@@ -226,10 +243,16 @@ export default function ProyectoView({ selectedSpeciesIds = [] }: { selectedSpec
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 font-display">Proyecto: Valle Verde</h1>
-          <p className="text-sm text-gray-500">Plan de reforestación Fase 1</p>
+          <h1 className="text-2xl font-bold text-gray-900 font-display">{String(activeProject?.nombre ?? 'Proyecto: Valle Verde')}</h1>
+          <p className="text-sm text-gray-500">{String(activeProject?.fase ?? 'Plan de reforestación Fase 1')}</p>
         </div>
         <div className="flex items-center space-x-3 w-full md:w-auto">
+          {projects.length > 1 && <select aria-label="Cambiar proyecto" value={selectedProjectId} onChange={(event) => onProjectSelected?.(event.target.value)} className="max-w-40 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-primary">
+            {projects.map((item) => <option key={String(item.id ?? item.proyecto_id)} value={String(item.id ?? item.proyecto_id)}>{String(item.nombre ?? 'Proyecto')}</option>)}
+          </select>}
+          <button onClick={() => { void createProject(); }} disabled={saving} className="flex-1 md:flex-none px-4 py-2 bg-primary text-white rounded-xl font-medium hover:bg-primary/90 transition-colors disabled:opacity-60">
+            {saving ? 'Creando…' : 'Crear otro proyecto'}
+          </button>
           <button className="flex-1 md:flex-none px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition-colors shadow-sm flex items-center justify-center">
             <Share2 className="w-4 h-4 mr-2" />
             Compartir

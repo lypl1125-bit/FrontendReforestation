@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck, Trees, Users } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck, Trees, Users } from 'lucide-react';
 import { apiOptions } from '../services/api';
 
 type Props = {
@@ -9,11 +9,13 @@ type Props = {
 
 type LoginProps = Props & {
   onLogin: (email: string, password: string, remember: boolean) => Promise<void>;
+  onGoogleAuth?: () => Promise<void>;
   sessionError?: string;
 };
 
 type RegisterProps = Props & {
   onRegister: (fullName: string, email: string, password: string) => Promise<boolean>;
+  onGoogleAuth?: () => Promise<void>;
 };
 
 const fieldClass = 'w-full rounded-xl border border-outline-variant bg-surface px-4 py-3 text-sm text-on-surface placeholder:text-outline outline-none transition focus:border-secondary focus:bg-white focus:ring-2 focus:ring-secondary/20';
@@ -81,7 +83,34 @@ function AuthLayout({ children, navigate, registration = false }: Pick<Props, 'n
   );
 }
 
-export function LoginPage({ navigate, onLogin, sessionError = '' }: LoginProps) {
+function GoogleAuthButton({ onGoogleAuth, label }: { onGoogleAuth?: () => Promise<void>; label: string }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const enabled = apiOptions.googleAuthEnabled && apiOptions.dataSource === 'api' && Boolean(onGoogleAuth);
+
+  const start = async () => {
+    if (!onGoogleAuth) return;
+    setError('');
+    setSubmitting(true);
+    try {
+      await onGoogleAuth();
+    } catch (authError) {
+      setError(authError instanceof Error ? authError.message : 'No fue posible continuar con Google.');
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <button type="button" onClick={() => { void start(); }} disabled={!enabled || submitting} title={enabled ? 'Continuar con Google' : 'Configura el inicio con Google en el backend y VITE_GOOGLE_AUTH_ENABLED'} className="flex w-full items-center justify-center gap-2 rounded-xl border border-outline-variant px-3 py-3 text-sm font-semibold text-on-surface transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60">
+        <span aria-hidden="true" className="font-bold text-blue-600">G</span>{submitting ? 'Conectando…' : label}{!enabled && <span className="text-[10px] font-medium text-outline">configuración pendiente</span>}
+      </button>
+      {error && <p role="alert" className="rounded-xl border border-error/30 bg-error-container/40 px-4 py-2.5 text-sm text-on-error-container">{error}</p>}
+    </div>
+  );
+}
+
+export function LoginPage({ navigate, onLogin, onGoogleAuth, sessionError = '' }: LoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -114,10 +143,7 @@ export function LoginPage({ navigate, onLogin, sessionError = '' }: LoginProps) 
         <p className="mt-2 text-sm leading-6 text-on-surface-variant">Ingresa a tu cuenta para gestionar tus proyectos de siembra y predios.</p>
       </div>
 
-      <div className="mb-5 grid grid-cols-2 gap-3">
-        <button type="button" disabled title="Disponible próximamente" className="flex items-center justify-center gap-2 rounded-xl border border-outline-variant px-3 py-3 text-sm font-semibold text-on-surface-variant opacity-70">🌐 Google <span className="text-[10px]">próximamente</span></button>
-        <button type="button" disabled title="Disponible próximamente" className="flex items-center justify-center gap-2 rounded-xl border border-outline-variant px-3 py-3 text-sm font-semibold text-on-surface-variant opacity-70">● Apple <span className="text-[10px]">próximamente</span></button>
-      </div>
+      <div className="mb-5"><GoogleAuthButton onGoogleAuth={onGoogleAuth} label="Continuar con Google" /></div>
       <div className="relative mb-5 text-center"><div className="border-t border-outline-variant/60" /><span className="relative -top-3 bg-white px-3 text-xs text-outline">o continúa con correo electrónico</span></div>
 
       <form className="space-y-4" onSubmit={submit}>
@@ -135,11 +161,12 @@ export function LoginPage({ navigate, onLogin, sessionError = '' }: LoginProps) 
   );
 }
 
-export function RegisterPage({ navigate, onRegister }: RegisterProps) {
+export function RegisterPage({ navigate, onRegister, onGoogleAuth }: RegisterProps) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [success, setSuccess] = useState(false);
+  const [confirmationRequired, setConfirmationRequired] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const strength = [password.length >= 8, /[A-Z]/.test(password) && /[a-z]/.test(password), /\d/.test(password), /[^A-Za-z0-9]/.test(password)].filter(Boolean).length;
@@ -147,6 +174,7 @@ export function RegisterPage({ navigate, onRegister }: RegisterProps) {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const form = event.currentTarget;
     const formData = new FormData(event.currentTarget);
     if (password.length < 8) {
       setError('La contraseña debe tener al menos 8 caracteres.');
@@ -157,14 +185,15 @@ export function RegisterPage({ navigate, onRegister }: RegisterProps) {
       return;
     }
     setError('');
-    setNotice('');
     setSubmitting(true);
     try {
       const fullName = `${String(formData.get('firstName'))} ${String(formData.get('lastName'))}`.trim();
       const authenticated = await onRegister(fullName, String(formData.get('email')).trim(), password);
-      if (!authenticated) {
-        setNotice('Cuenta creada. Si la API requiere confirmar tu correo, hazlo antes de iniciar sesión.');
-      }
+      form.reset();
+      setPassword('');
+      setConfirmPassword('');
+      setConfirmationRequired(!authenticated);
+      setSuccess(true);
     } catch (registrationError) {
       setError(registrationError instanceof Error ? registrationError.message : 'No fue posible crear la cuenta.');
     } finally {
@@ -174,16 +203,33 @@ export function RegisterPage({ navigate, onRegister }: RegisterProps) {
 
   return (
     <AuthLayout navigate={navigate} registration>
+      {success ? (
+        <section className="mx-auto max-w-lg rounded-3xl border border-outline-variant/50 bg-white p-6 text-center shadow-sm sm:p-9" aria-live="polite">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"><CheckCircle2 size={36} /></div>
+          <p className="mt-5 text-xs font-bold uppercase tracking-wider text-secondary">Registro completado</p>
+          <h1 className="mt-2 font-epilogue text-3xl font-bold tracking-tight text-primary">Cuenta creada</h1>
+          <p className="mt-3 text-sm leading-6 text-on-surface-variant">
+            {confirmationRequired
+              ? 'Tu cuenta ya está registrada. Revisa tu correo y confirma la dirección para activar el acceso.'
+              : 'Tu cuenta ya está lista. Inicia sesión para comenzar a configurar tu predio, tus lotes y proyectos.'}
+          </p>
+          <div className="mt-6 rounded-2xl border border-secondary/15 bg-surface p-4 text-left">
+            <p className="text-sm font-bold text-primary">¿Qué sigue?</p>
+            <p className="mt-1 text-xs leading-5 text-on-surface-variant">{confirmationRequired ? 'Confirma tu correo y luego vuelve a esta página para iniciar sesión.' : 'En el siguiente paso podrás registrar tu terreno y crear tu primer proyecto.'}</p>
+          </div>
+          <button type="button" onClick={() => navigate('/login')} className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-primary-container px-5 py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-primary">
+            Ir a iniciar sesión <ArrowRight size={17} />
+          </button>
+          <button type="button" onClick={() => navigate('/')} className="mt-3 text-sm font-semibold text-secondary underline">Volver al inicio</button>
+        </section>
+      ) : <>
       <div className="mb-5">
         <span className="mb-2 inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-secondary"><Users size={15} /> Nuevo custodio forestal</span>
         <h1 className="font-epilogue text-3xl font-bold tracking-tight text-primary md:text-4xl">Únete a la Red de Reforestación</h1>
         <p className="mt-2 text-sm leading-6 text-on-surface-variant">Comienza a regenerar tus predios con especies nativas adaptadas a tu bioma.</p>
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-3">
-        <button type="button" disabled title="Disponible próximamente" className="rounded-full border border-outline-variant px-3 py-2.5 text-xs font-semibold text-on-surface-variant opacity-70">🌐 Registrarse con Google</button>
-        <button type="button" disabled title="Disponible próximamente" className="rounded-full border border-outline-variant px-3 py-2.5 text-xs font-semibold text-on-surface-variant opacity-70">● Registrarse con Apple</button>
-      </div>
+      <div className="mb-4"><GoogleAuthButton onGoogleAuth={onGoogleAuth} label="Registrarse con Google" /></div>
       <div className="relative mb-4 text-center"><div className="border-t border-outline-variant/60" /><span className="relative -top-3 bg-white px-3 text-xs text-outline">o completa tus datos</span></div>
 
       <form className="space-y-3.5" onSubmit={submit}>
@@ -202,13 +248,13 @@ export function RegisterPage({ navigate, onRegister }: RegisterProps) {
           <div className="grid grid-cols-4 gap-1">{[0, 1, 2, 3].map((item) => <span key={item} className={`h-1 rounded-full ${item < strength ? strength > 2 ? 'bg-secondary' : 'bg-amber-500' : 'bg-outline-variant/50'}`} />)}</div>
         </div>
         <label className="flex items-start gap-2 text-xs leading-5 text-on-surface-variant"><input className="mt-1 rounded border-outline-variant text-primary focus:ring-secondary" type="checkbox" required /><span>Acepto los <a href="#terms" className="font-semibold text-secondary underline">Términos de Conservación</a> y la Política de Privacidad.</span></label>
-        {notice && <p role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">{notice} <button type="button" onClick={() => navigate('/login')} className="font-bold underline">Ir al inicio de sesión</button></p>}
         {error && <p role="alert" className="rounded-xl border border-error/30 bg-error-container/40 px-4 py-2.5 text-sm text-on-error-container">{error}</p>}
         <button type="submit" disabled={submitting} className="flex w-full items-center justify-center gap-2 rounded-full bg-primary-container px-5 py-3 text-sm font-bold text-white shadow-md transition hover:bg-primary disabled:cursor-wait disabled:opacity-60">{submitting ? 'Creando cuenta…' : 'Crear cuenta gratuita'} {!submitting && <ArrowRight size={17} />}</button>
       </form>
 
       <div className="mt-4 flex items-start gap-2 rounded-xl border border-outline-variant/30 bg-surface p-3 text-xs leading-5 text-on-surface-variant"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-secondary" />{apiOptions.dataSource === 'api' ? 'La cuenta se registra en la API con tu nombre, correo y contraseña.' : 'Registro de demostración: no se crea una cuenta en el backend.'}</div>
       <div className="mt-5 border-t border-outline-variant/50 pt-4 text-center text-sm text-on-surface-variant">¿Ya tienes una cuenta? <button onClick={() => navigate('/login')} className="font-bold text-secondary underline">Inicia sesión aquí</button></div>
+      </>}
     </AuthLayout>
   );
 }

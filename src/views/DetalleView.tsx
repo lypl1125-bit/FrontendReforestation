@@ -6,9 +6,10 @@ import { api, apiOptions, ApiRecord } from '../services/api';
 interface DetalleViewProps {
   setCurrentView: (view: ViewState) => void;
   selectedSpeciesId: string;
+  lotId?: string;
 }
 
-export default function DetalleView({ setCurrentView, selectedSpeciesId }: DetalleViewProps) {
+export default function DetalleView({ setCurrentView, selectedSpeciesId, lotId = apiOptions.loteId }: DetalleViewProps) {
   const [species, setSpecies] = useState<ApiRecord | null>(null);
   const [protocol, setProtocol] = useState<ApiRecord[]>([]);
   const [stock, setStock] = useState<ApiRecord[]>([]);
@@ -24,9 +25,9 @@ export default function DetalleView({ setCurrentView, selectedSpeciesId }: Detal
     const load = async () => {
       try {
         const [detail, plantingProtocol, stockReport] = await Promise.all([
-          api.getEspecie(selectedSpeciesId, apiOptions.loteId),
+          api.getEspecie(selectedSpeciesId, lotId),
           api.getProtocoloEspecie(selectedSpeciesId),
-          api.getStockEspecie(selectedSpeciesId, apiOptions.loteId),
+          api.getStockEspecie(selectedSpeciesId, lotId),
         ]);
         if (!active) return;
         setSpecies(detail);
@@ -38,7 +39,7 @@ export default function DetalleView({ setCurrentView, selectedSpeciesId }: Detal
     };
     void load();
     return () => { active = false; };
-  }, [selectedSpeciesId]);
+  }, [lotId, selectedSpeciesId]);
 
   const speciesName = String(species?.nombre_comun ?? 'Encina');
   const scientificName = String(species?.nombre_cientifico ?? 'Quercus ilex');
