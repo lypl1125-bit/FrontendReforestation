@@ -1,4 +1,4 @@
-import { ArrowLeft, Leaf, Droplets, Sun, Ruler, CheckCircle2, ChevronRight, Sprout, ShieldAlert, Mountain, Clock } from 'lucide-react';
+import { ArrowLeft, Leaf, Droplets, Sun, Ruler, CheckCircle2, ChevronRight, Sprout, ShieldAlert, Mountain, Clock, Plus } from 'lucide-react';
 import { ViewState } from '../types';
 import { useEffect, useState } from 'react';
 import { api, apiOptions, ApiRecord } from '../services/api';
@@ -113,7 +113,7 @@ export default function DetalleView({ setCurrentView, selectedSpeciesId, lotId =
                   <p className="text-gray-500 italic font-medium">{displayScientificName}</p>
                 </div>
                 <button className="px-6 py-2.5 bg-primary text-white rounded-xl font-semibold hover:bg-primary/90 transition-colors shadow-sm shadow-primary/20 flex items-center space-x-2">
-                  <PlusIcon className="w-5 h-5" />
+                  <Plus className="w-5 h-5" />
                   <span className="hidden sm:inline">Añadir al Proyecto</span>
                   <span className="sm:hidden">Añadir</span>
                 </button>
@@ -249,24 +249,4 @@ export default function DetalleView({ setCurrentView, selectedSpeciesId, lotId =
       </div>
     </div>
   );
-}
-
-function PlusIcon(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M5 12h14" />
-      <path d="M12 5v14" />
-    </svg>
-  )
 }
