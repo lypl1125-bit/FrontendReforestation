@@ -20,7 +20,8 @@ let lots: ApiRecord[] = [{
   area_ha: 12.5,
   municipio: 'Ibagué',
   departamento: 'Tolima',
-  ubicacion: { lat: 4.4701, lng: -75.2901 },
+  predio_ubicacion: { type: 'Point', coordinates: [-75.2901, 4.4701] },
+  ubicacion: { type: 'Point', coordinates: [-75.2901, 4.4701] },
   geom: { type: 'Polygon', coordinates: [[[-75.291, 4.471], [-75.289, 4.471], [-75.289, 4.469], [-75.291, 4.469], [-75.291, 4.471]]] },
 }];
 let predios: ApiRecord[] = [{
@@ -91,6 +92,13 @@ function recordBody(init?: RequestInit): ApiRecord {
 
 function recordListBody(init?: RequestInit): ApiRecord[] {
   return init?.body ? JSON.parse(String(init.body)) as ApiRecord[] : [];
+}
+
+function geoJsonPoint(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value;
+  const coordinate = value as ApiRecord;
+  if (typeof coordinate.lat !== 'number' || typeof coordinate.lng !== 'number') return value;
+  return { type: 'Point', coordinates: [coordinate.lng, coordinate.lat] };
 }
 
 function notFound(message: string): never {
@@ -184,27 +192,11 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
 
   if (method === 'GET' && segments.length === 0) result = { Msg: 'Welcome to the ecorenace API!' };
   else if (segments.join('/') === 'lotes' && method === 'GET') result = { lotes: [...lots] };
-  else if (segments[0] === 'lotes' && segments.length === 2 && method === 'GET') {
-    result = lots.find((lot) => String(lot.id ?? lot.lote_id) === segments[1]);
-    if (!result) return notFound(`No existe el lote ${segments[1]}.`);
-  } else if (segments[0] === 'lotes' && segments.length === 2 && method === 'PATCH') {
-    const lot = lots.find((item) => String(item.id ?? item.lote_id) === segments[1]);
-    if (!lot) return notFound(`No existe el lote ${segments[1]}.`);
-    result = { ...lot, ...body };
-    lots[lots.indexOf(lot)] = result as ApiRecord;
-  } else if (segments[0] === 'predios' && segments.length === 2 && method === 'GET') {
-    result = predios.find((item) => String(item.id ?? item.predio_id) === segments[1]);
-    if (!result) return notFound(`No existe el predio ${segments[1]}.`);
-  } else if (segments[0] === 'predios' && segments.length === 2 && method === 'PATCH') {
-    const predio = predios.find((item) => String(item.id ?? item.predio_id) === segments[1]);
-    if (!predio) return notFound(`No existe el predio ${segments[1]}.`);
-    result = { ...predio, ...body };
-    predios[predios.indexOf(predio)] = result as ApiRecord;
-  }
   else if (segments.join('/') === 'predios' && method === 'POST') {
     const predio = body as ApiRecord;
     const firstLot = predio.primer_lote as ApiRecord;
     const predioId = crypto.randomUUID();
+    const savedPredio = { ...predio, id: predioId, ubicacion: geoJsonPoint(predio.ubicacion) };
     const lot = {
       id: crypto.randomUUID(),
       predio_id: predioId,
@@ -213,12 +205,22 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
       area_ha: Number(firstLot?.area_ha ?? predio.area_ha ?? 0),
       municipio: String(predio.municipio ?? ''),
       departamento: String(predio.departamento ?? ''),
+      predio_ubicacion: geoJsonPoint(predio.ubicacion),
+      ubicacion: geoJsonPoint(firstLot?.ubicacion),
+      geom: firstLot?.geom,
     };
-    predios = [...predios, { ...predio, id: predioId }];
+    predios = [...predios, savedPredio];
     lots = [...lots, lot];
-    result = { predio: { ...predio, id: predioId }, lote: lot };
+    result = { predio: savedPredio, lote: lot };
   } else if (segments[0] === 'predios' && segments[2] === 'lotes' && method === 'POST') {
-    const lot = { id: crypto.randomUUID(), predio_id: segments[1], ...body };
+    const predio = predios.find((item) => String(item.id ?? item.predio_id) === segments[1]);
+    const lot = {
+      id: crypto.randomUUID(),
+      predio_id: segments[1],
+      ...body,
+      predio_ubicacion: geoJsonPoint(predio?.ubicacion),
+      ubicacion: geoJsonPoint(body.ubicacion),
+    };
     lots = [...lots, lot];
     result = lot;
   } else if (segments[0] === 'lotes' && segments[2] === 'proyectos' && method === 'GET') {

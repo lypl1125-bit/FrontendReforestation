@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ApiRecord } from '../src/services/api.ts';
 import { positiveArea } from '../src/services/areaValidation.ts';
-import { createLotPolygon, getLotCenter } from '../src/services/location.ts';
+import { createLotPolygon, getLotCenter, parseGpsCoordinate } from '../src/services/location.ts';
 import { mockRequest } from '../src/services/mockApi.ts';
 
 test('accepts only positive areas with at most two decimal places', () => {
@@ -73,6 +73,17 @@ test('creates a closed GeoJSON perimeter and rejects invalid polygons', () => {
 });
 
 test('persists and reads predio and lot location data in the mock API', async () => {
+  const points = [
+    { lat: 4.45, lng: -75.23 },
+    { lat: 4.45, lng: -75.22 },
+    { lat: 4.46, lng: -75.22 },
+  ];
+  const geometry = createLotPolygon(points);
+  const lotLocation = getLotCenter(points);
+  assert.ok(geometry);
+  assert.ok(lotLocation);
+  const predioLocation = { lat: 4.44, lng: -75.24 };
+
   const workspace = await mockRequest<ApiRecord>('/predios', {
     method: 'POST',
     body: JSON.stringify({
@@ -80,34 +91,41 @@ test('persists and reads predio and lot location data in the mock API', async ()
       municipio: 'Ibagué',
       departamento: 'Tolima',
       area_ha: 5,
-      primer_lote: { nombre: 'Lote geográfico', area_ha: 2 },
+      ubicacion: predioLocation,
+      primer_lote: { nombre: 'Lote geográfico', area_ha: 2, ubicacion: lotLocation, geom: geometry },
     }),
   });
   const predio = workspace.predio as ApiRecord;
   const lot = workspace.lote as ApiRecord;
-  const location = { lat: 4.45, lng: -75.23 };
-  const geometry = createLotPolygon([
-    { lat: 4.45, lng: -75.23 },
-    { lat: 4.45, lng: -75.22 },
-    { lat: 4.46, lng: -75.22 },
+
+  const additionalGeometry = createLotPolygon([
+    { lat: 4.47, lng: -75.21 },
+    { lat: 4.47, lng: -75.2 },
+    { lat: 4.48, lng: -75.2 },
   ]);
-  assert.ok(geometry);
-
-  await mockRequest(`/predios/${String(predio.id)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ ubicacion: location }),
-  });
-  await mockRequest(`/lotes/${String(lot.id)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ ubicacion: getLotCenter([
-      { lat: 4.45, lng: -75.23 },
-      { lat: 4.45, lng: -75.22 },
-      { lat: 4.46, lng: -75.22 },
-    ]), geom: geometry }),
+  const additionalLocation = getLotCenter([
+    { lat: 4.47, lng: -75.21 },
+    { lat: 4.47, lng: -75.2 },
+    { lat: 4.48, lng: -75.2 },
+  ]);
+  assert.ok(additionalGeometry);
+  assert.ok(additionalLocation);
+  const additionalLot = await mockRequest<ApiRecord>(`/predios/${String(predio.id)}/lotes`, {
+    method: 'POST',
+    body: JSON.stringify({ nombre: 'Lote adicional', area_ha: 1, ubicacion: additionalLocation, geom: additionalGeometry }),
   });
 
-  const savedPredio = await mockRequest<ApiRecord>(`/predios/${String(predio.id)}`);
-  const savedLot = await mockRequest<ApiRecord>(`/lotes/${String(lot.id)}`);
-  assert.deepEqual(savedPredio.ubicacion, location);
-  assert.equal((savedLot.geom as ApiRecord).type, 'Polygon');
+  const savedLotsResponse = await mockRequest<ApiRecord>('/lotes');
+  const savedLots = savedLotsResponse.lotes as ApiRecord[];
+  const savedLot = savedLots.find((item) => item.id === lot.id);
+  const savedAdditionalLot = savedLots.find((item) => item.id === additionalLot.id);
+  assert.ok(savedLot);
+  assert.ok(savedAdditionalLot);
+  assert.deepEqual(savedLot.predio_ubicacion, { type: 'Point', coordinates: [predioLocation.lng, predioLocation.lat] });
+  assert.deepEqual(savedLot.ubicacion, { type: 'Point', coordinates: [lotLocation.lng, lotLocation.lat] });
+  assert.deepEqual(savedLot.geom, geometry);
+  assert.deepEqual(parseGpsCoordinate(savedLot.predio_ubicacion), predioLocation);
+  assert.deepEqual(parseGpsCoordinate(savedLot.ubicacion), lotLocation);
+  assert.deepEqual(savedAdditionalLot.ubicacion, { type: 'Point', coordinates: [additionalLocation.lng, additionalLocation.lat] });
+  assert.deepEqual(savedAdditionalLot.geom, additionalGeometry);
 });

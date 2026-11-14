@@ -1,5 +1,23 @@
 import type { GeoJsonGeometry, GpsCoordinate } from './api';
 
+export function parseGpsCoordinate(value: unknown): GpsCoordinate | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (record.type === 'Point' && Array.isArray(record.coordinates)) {
+    const [lngValue, latValue] = record.coordinates;
+    const lat = Number(latValue);
+    const lng = Number(lngValue);
+    return Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180
+      ? { lat, lng }
+      : null;
+  }
+  const lat = Number(record.lat);
+  const lng = Number(record.lng);
+  return Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180
+    ? { lat, lng }
+    : null;
+}
+
 export function createLotPolygon(points: GpsCoordinate[]): GeoJsonGeometry | null {
   if (points.length < 3 || new Set(points.map(({ lat, lng }) => `${lat},${lng}`)).size < 3) return null;
   if (points.some(({ lat, lng }) =>

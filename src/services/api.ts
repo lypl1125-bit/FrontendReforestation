@@ -51,30 +51,24 @@ export type PredioCreate = {
   municipio: string;
   departamento: string;
   area_ha: number;
+  ubicacion: GpsCoordinate;
   primer_lote: {
     nombre: string;
     area_ha: number;
+    ubicacion: GpsCoordinate;
+    geom: GeoJsonGeometry;
   };
 };
 
-export type PredioUpdate = {
-  ubicacion?: GpsCoordinate;
-  altitud_msnm?: number;
-  descripcion?: string;
-};
-
 export type LoteCreate = {
-  codigo?: string;
   nombre: string;
   area_ha: number;
-  ubicacion?: GpsCoordinate;
-  geom?: GeoJsonGeometry;
+  ubicacion: GpsCoordinate;
+  geom: GeoJsonGeometry;
   prioridad?: 'alta' | 'media' | 'baja';
   altitud_msnm?: number;
   pendiente_grados?: number;
 };
-
-export type LoteUpdate = Pick<LoteCreate, 'ubicacion' | 'geom' | 'prioridad' | 'altitud_msnm' | 'pendiente_grados'>;
 
 export type EspecieSeleccionItem = {
   especie_id: string;
@@ -218,14 +212,16 @@ export const api = {
     request<unknown>('/auth/google/callback', json('POST', { code, code_verifier: codeVerifier }), false),
   getCurrentUser: () => request<unknown>('/auth/me'),
   listLotes: () => request<unknown>('/lotes'),
-  getLote: (loteId: string) => request<ApiRecord>(`/lotes/${encodeURIComponent(loteId)}`),
-  getPredio: (predioId: string) => request<ApiRecord>(`/predios/${encodeURIComponent(predioId)}`),
   createPredio: (body: PredioCreate) => request<ApiRecord>('/predios', json('POST', body)),
-  updatePredio: (predioId: string, body: PredioUpdate) =>
-    request<ApiRecord>(`/predios/${encodeURIComponent(predioId)}`, json('PATCH', body)),
   createLote: (predioId: string, body: LoteCreate) =>
     request<ApiRecord>(`/predios/${encodeURIComponent(predioId)}/lotes`, json('POST', body)),
-  updateLote: (loteId: string, body: LoteUpdate) =>
+  getPredio: (predioId: string) =>
+    request<ApiRecord>(`/predios/${encodeURIComponent(predioId)}`),
+  updatePredio: (predioId: string, body: ApiRecord) =>
+    request<ApiRecord>(`/predios/${encodeURIComponent(predioId)}`, json('PATCH', body)),
+  getLote: (loteId: string) =>
+    request<ApiRecord>(`/lotes/${encodeURIComponent(loteId)}`),
+  updateLote: (loteId: string, body: ApiRecord) =>
     request<ApiRecord>(`/lotes/${encodeURIComponent(loteId)}`, json('PATCH', body)),
   listProyectos: (loteId: string) =>
     request<unknown>(`/lotes/${encodeURIComponent(loteId)}/proyectos`),

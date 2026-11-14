@@ -20,12 +20,9 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
   const [projectError, setProjectError] = useState('');
   const [createdLot, setCreatedLot] = useState<ApiRecord | null>(null);
   const [createdProjectId, setCreatedProjectId] = useState('');
-  const [createdPredioId, setCreatedPredioId] = useState('');
   const [addToExistingPredio, setAddToExistingPredio] = useState(false);
   const [predioLocation, setPredioLocation] = useState<GpsCoordinate | null>(null);
   const [lotBoundary, setLotBoundary] = useState<GpsCoordinate[]>([]);
-  const [locationError, setLocationError] = useState('');
-  const [locationSaved, setLocationSaved] = useState(false);
   const predios = existingLots.reduce<ApiRecord[]>((items, lot) => {
     const predioId = String(lot.predio_id ?? '');
     if (predioId && !items.some((item) => item.id === predioId)) {
@@ -33,17 +30,6 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
     }
     return items;
   }, []);
-
-  const persistCreatedLocation = async (lot: ApiRecord, predioId: string) => {
-    const lotId = String(lot.id ?? lot.lote_id ?? '');
-    const geometry = createLotPolygon(lotBoundary);
-    const center = getLotCenter(lotBoundary);
-    if (!lotId || !geometry || !center) throw new Error('Dibuja un perímetro válido con al menos tres vértices antes de guardar.');
-    if (!predioId) throw new Error('El lote se creó, pero la API no devolvió el identificador del predio para guardar su ubicación.');
-    if (!predioLocation) throw new Error('Marca la ubicación del predio en el mapa.');
-    await api.updatePredio(predioId, { ubicacion: predioLocation });
-    await api.updateLote(lotId, { geom: geometry, ubicacion: center });
-  };
 
   const createInitialProject = async (lot: ApiRecord) => {
     const lotId = String(lot.id ?? lot.lote_id ?? '');
@@ -99,7 +85,9 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
       setError('El área del primer lote no puede superar el área total del predio.');
       return;
     }
-    if (!createLotPolygon(lotBoundary)) {
+    const geometry = createLotPolygon(lotBoundary);
+    const lotLocation = getLotCenter(lotBoundary);
+    if (!geometry || !lotLocation) {
       setError('Dibuja un perímetro válido para el lote con al menos tres vértices no alineados.');
       return;
     }
@@ -110,37 +98,29 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
     setSaving(true);
     setError('');
     setProjectError('');
-    setLocationError('');
     try {
       let lot: ApiRecord;
-      let predioId = '';
       if (addToExistingPredio) {
         const predioId = String(formData.get('existingPredio'));
         const selectedPredio = predios.find((item) => item.id === predioId);
-        const geometry = createLotPolygon(lotBoundary);
-        const center = getLotCenter(lotBoundary);
-        if (!geometry || !center) throw new Error('Dibuja un perímetro válido para el lote.');
         const response = await api.createLote(predioId, {
-          codigo: lotName,
           nombre: lotName,
           area_ha: lotArea,
           geom: geometry,
-          ubicacion: center,
+          ubicacion: lotLocation,
         });
         lot = { ...response, predio_nombre: selectedPredio?.nombre ?? 'Predio registrado' };
       } else {
         if (predioArea === null) throw new Error('El área del predio es obligatoria.');
+        if (!predioLocation) throw new Error('Marca la ubicación de referencia del predio en el mapa.');
         const response = await api.createPredio({
           nombre: predioName,
           municipio: municipality,
           departamento: department,
           area_ha: predioArea,
-          primer_lote: { nombre: lotName, area_ha: lotArea },
+          ubicacion: predioLocation,
+          primer_lote: { nombre: lotName, area_ha: lotArea, ubicacion: lotLocation, geom: geometry },
         });
-        const rawPredio = response.predio;
-        if (typeof rawPredio === 'object' && rawPredio !== null && !Array.isArray(rawPredio)) {
-          predioId = String((rawPredio as ApiRecord).id ?? (rawPredio as ApiRecord).predio_id ?? '');
-        }
         const rawLot = response.lote;
         if (typeof rawLot !== 'object' || rawLot === null || Array.isArray(rawLot)) {
           throw new Error('La API creó el predio, pero no devolvió el primer lote.');
@@ -150,21 +130,7 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
       const lotId = String(lot.id ?? lot.lote_id ?? '');
       if (!lotId) throw new Error('La API creó el lote sin devolver su identificador.');
       const lotWithProjectName = { ...lot, proyecto_inicial_nombre: projectName };
-      if (!addToExistingPredio) {
-        try {
-          await persistCreatedLocation(lotWithProjectName, predioId);
-          setLocationSaved(true);
-        } catch (saveError) {
-          setCreatedLot(lotWithProjectName);
-          setCreatedPredioId(predioId);
-          setLocationError(saveError instanceof Error ? saveError.message : 'No fue posible guardar la ubicación.');
-          return;
-        }
-      }
       setCreatedLot(lotWithProjectName);
-      if (addToExistingPredio) {
-        setLocationSaved(true);
-      }
       await createInitialProject(lotWithProjectName);
     } catch (creationError) {
       setError(creationError instanceof Error ? creationError.message : 'No fue posible guardar el predio y el lote.');
@@ -177,35 +143,16 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
     return (
       <section className="mx-auto max-w-2xl rounded-3xl border border-outline-variant/50 bg-white p-6 shadow-sm sm:p-10">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary/10 text-secondary"><CheckCircle2 size={34} /></div>
-        <h1 className="mt-5 text-center font-epilogue text-3xl font-bold text-primary">{locationSaved ? 'Tu espacio ya está listo' : 'El lote ya se creó'}</h1>
+        <h1 className="mt-5 text-center font-epilogue text-3xl font-bold text-primary">Tu espacio ya está listo</h1>
         <p className="mt-2 text-center text-sm leading-6 text-on-surface-variant">
           Creamos <strong>{String(createdLot.nombre ?? 'tu lote')}</strong> dentro de {String(createdLot.predio_nombre ?? 'tu predio')}.
-          {!locationSaved ? ' Aún falta guardar su ubicación geográfica.' : ''}
+          {' La ubicación y el perímetro también quedaron guardados.'}
           {createdProjectId ? ' También quedó creado tu primer proyecto.' : ''}
         </p>
-        {locationError && <p role="alert" className="mt-5 rounded-xl border border-error/30 bg-error-container/40 px-4 py-3 text-sm text-on-error-container">El lote se creó, pero su ubicación no quedó guardada: {locationError}. Reintenta guardar para completar el mapa; no necesitas crear el lote otra vez.</p>}
         {projectError && <p role="alert" className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">El predio, el lote y su ubicación están guardados, pero no se pudo crear el proyecto inicial: {projectError} Puedes intentarlo desde el planificador.</p>}
-        {!locationSaved && <button
-          type="button"
-          disabled={saving}
-          onClick={async () => {
-            setSaving(true);
-            setLocationError('');
-            try {
-              await persistCreatedLocation(createdLot, createdPredioId);
-              setLocationSaved(true);
-              if (!createdProjectId && !projectError) await createInitialProject(createdLot);
-            } catch (saveError) {
-              setLocationError(saveError instanceof Error ? saveError.message : 'No fue posible guardar la ubicación.');
-            } finally {
-              setSaving(false);
-            }
-          }}
-          className="mt-7 flex w-full items-center justify-center gap-2 rounded-full border border-secondary px-5 py-3.5 text-sm font-bold text-secondary disabled:opacity-60"
-        >{saving ? 'Guardando ubicación…' : 'Reintentar guardado de ubicación'}</button>}
-        {locationSaved && <button type="button" onClick={() => onComplete(createdLot, createdProjectId || undefined)} className="mt-7 flex w-full items-center justify-center gap-2 rounded-full bg-primary-container px-5 py-3.5 text-sm font-bold text-white transition hover:bg-primary">
+        <button type="button" onClick={() => onComplete(createdLot, createdProjectId || undefined)} className="mt-7 flex w-full items-center justify-center gap-2 rounded-full bg-primary-container px-5 py-3.5 text-sm font-bold text-white transition hover:bg-primary">
           Ir a mi espacio de trabajo <ArrowRight size={17} />
-        </button>}
+        </button>
       </section>
     );
   }

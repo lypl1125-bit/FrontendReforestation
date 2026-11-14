@@ -346,7 +346,7 @@ export default function App() {
         <TopBar userName={user.name} onLogout={logout} lots={lots} projects={projects} activeLotId={activeLotId} activeProjectId={activeProjectId} onLotChange={selectLot} onProjectChange={selectProject} onAddLot={() => navigate('/app/setup')} />
         <main key={activeLotId} className="flex-1 p-4 md:p-8 pt-20 md:pt-24 max-w-7xl mx-auto w-full">
           {workspaceError && <p role="alert" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">{workspaceError}</p>}
-          {currentView === 'diagnostico' && <DiagnosticoView setCurrentView={setCurrentView} lotId={activeLotId} />}
+          {currentView === 'diagnostico' && <DiagnosticoView setCurrentView={setCurrentView} lotId={activeLotId} lot={activeLot} />}
           {currentView === 'catalogo' && <CatalogoView setCurrentView={setCurrentView} setSelectedSpeciesId={setSelectedSpeciesId} selectedSpeciesIds={selectedSpeciesIds} setSelectedSpeciesIds={setSelectedSpeciesIds} lotId={activeLotId} />}
           {currentView === 'detalle' && <DetalleView setCurrentView={setCurrentView} selectedSpeciesId={selectedSpeciesId} lotId={activeLotId} />}
           {currentView === 'proyecto' && <ProyectoView selectedSpeciesIds={selectedSpeciesIds} lotId={activeLotId} selectedProjectId={activeProjectId} projects={projects} onProjectSelected={selectProject} onProjectCreated={addCreatedProject} />}
