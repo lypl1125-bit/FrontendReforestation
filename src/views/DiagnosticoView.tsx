@@ -1,10 +1,12 @@
 import { MapPin, Target, Activity, Droplet, TreePine, CloudRain, Navigation, Leaf, ExternalLink, Layers, CheckCircle2 } from 'lucide-react';
 import L, { type PathOptions } from 'leaflet';
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
-import { GeoJSON as GeoJSONLayer, MapContainer, TileLayer, useMap } from 'react-leaflet';
+import { CircleMarker, GeoJSON as GeoJSONLayer, MapContainer, TileLayer, useMap } from 'react-leaflet';
 import { ViewState } from '../types';
 import { useEffect, useMemo, useState } from 'react';
-import { api, apiOptions, ApiRecord } from '../services/api';
+import LocationPicker from '../components/LocationPicker';
+import { api, apiOptions, ApiRecord, GpsCoordinate } from '../services/api';
+import { createLotPolygon, getLotCenter } from '../services/location';
 import 'leaflet/dist/leaflet.css';
 
 type ZoneFeature = Feature<Geometry, Record<string, unknown>>;
@@ -25,6 +27,49 @@ const objectives: Objective[] = [
 
 function isRecord(value: unknown): value is ApiRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readGpsCoordinate(value: unknown): GpsCoordinate | null {
+  if (!isRecord(value)) return null;
+  const lat = Number(value.lat);
+  const lng = Number(value.lng);
+  return Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180
+    ? { lat, lng }
+    : null;
+}
+
+function readGeometry(value: unknown): Geometry | null {
+  if (!isRecord(value)) return null;
+  if (value.type === 'Feature') return readGeometry(value.geometry);
+  if (value.type === 'GeometryCollection') {
+    return Array.isArray(value.geometries) ? value as unknown as Geometry : null;
+  }
+  const validTypes = ['Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'];
+  return typeof value.type === 'string' && validTypes.includes(value.type) && Array.isArray(value.coordinates)
+    ? value as unknown as Geometry
+    : null;
+}
+
+function geometryPoints(value: unknown): GpsCoordinate[] {
+  if (!Array.isArray(value)) return [];
+  if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') {
+    const lng = value[0];
+    const lat = value[1];
+    return Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180
+      ? [{ lat, lng }]
+      : [];
+  }
+  return value.flatMap(geometryPoints);
+}
+
+function polygonBoundary(geometry: Geometry | null): GpsCoordinate[] {
+  if (!geometry || geometry.type !== 'Polygon') return [];
+  const ring = geometry.coordinates[0];
+  if (!ring) return [];
+  const points = ring.map(([lng, lat]) => ({ lat, lng }));
+  const first = points[0];
+  const last = points.at(-1);
+  return first && last && first.lat === last.lat && first.lng === last.lng ? points.slice(0, -1) : points;
 }
 
 function normalizeTitle(value: unknown): string {
@@ -77,7 +122,7 @@ function zoneStyle(feature?: Feature<Geometry, Record<string, unknown>>): PathOp
   return { color, weight: 3, fillColor: color, fillOpacity: 0.3 };
 }
 
-function zoneBounds(features: ZoneFeature[]): L.LatLngBounds | null {
+function zoneBounds(features: ZoneFeature[], lotGeometry: Geometry | null = null, locations: GpsCoordinate[] = []): L.LatLngBounds | null {
   const coordinates: L.LatLngExpression[] = [];
   const collect = (value: unknown) => {
     if (!Array.isArray(value)) return;
@@ -92,22 +137,32 @@ function zoneBounds(features: ZoneFeature[]): L.LatLngBounds | null {
     else collect(geometry.coordinates);
   };
   features.forEach((feature) => visitGeometry(feature.geometry));
+  if (lotGeometry) visitGeometry(lotGeometry);
+  locations.forEach(({ lat, lng }) => coordinates.push([lat, lng]));
   return coordinates.length ? L.latLngBounds(coordinates) : null;
 }
 
-function MapViewport({ features, locateRequest }: { features: ZoneFeature[]; locateRequest: number }) {
+function MapViewport({ features, lotGeometry, locations, locateRequest }: {
+  features: ZoneFeature[];
+  lotGeometry: Geometry | null;
+  locations: GpsCoordinate[];
+  locateRequest: number;
+}) {
   const map = useMap();
   useEffect(() => {
-    const bounds = zoneBounds(features);
+    const bounds = zoneBounds(features, lotGeometry, locations);
     if (bounds?.isValid()) map.fitBounds(bounds.pad(0.18), { maxZoom: 16 });
-  }, [features, locateRequest, map]);
+  }, [features, lotGeometry, locations, locateRequest, map]);
   return null;
 }
 
-function ZoneMap({ allFeatures, visibleFeatures, baseMap, locateRequest }: {
+function ZoneMap({ allFeatures, visibleFeatures, baseMap, lotGeometry, predioLocation, lotLocation, locateRequest }: {
   allFeatures: ZoneFeature[];
   visibleFeatures: ZoneFeature[];
   baseMap: BaseMap;
+  lotGeometry: Geometry | null;
+  predioLocation: GpsCoordinate | null;
+  lotLocation: GpsCoordinate | null;
   locateRequest: number;
 }) {
   const visibleData = useMemo<FeatureCollection<Geometry, Record<string, unknown>>>(() => ({ type: 'FeatureCollection', features: visibleFeatures }), [visibleFeatures]);
@@ -125,7 +180,19 @@ function ZoneMap({ allFeatures, visibleFeatures, baseMap, locateRequest }: {
           layer.bindPopup(content);
         }}
       />}
-      <MapViewport features={allFeatures} locateRequest={locateRequest} />
+      {lotGeometry && <GeoJSONLayer
+        key={`${baseMap.id}-lot`}
+        data={{ type: 'Feature', properties: { nombre: 'Perímetro del lote' }, geometry: lotGeometry }}
+        style={{ color: '#15803d', weight: 3, fillColor: '#22c55e', fillOpacity: 0.18 }}
+      />}
+      {predioLocation && <CircleMarker center={[predioLocation.lat, predioLocation.lng]} radius={8} pathOptions={{ color: '#064e3b', fillColor: '#10b981', fillOpacity: 0.95, weight: 2 }} />}
+      {lotLocation && <CircleMarker center={[lotLocation.lat, lotLocation.lng]} radius={5} pathOptions={{ color: '#ffffff', fillColor: '#15803d', fillOpacity: 1, weight: 2 }} />}
+      <MapViewport
+        features={allFeatures}
+        lotGeometry={lotGeometry}
+        locations={[predioLocation, lotLocation].filter((point): point is GpsCoordinate => point !== null)}
+        locateRequest={locateRequest}
+      />
     </MapContainer>
   );
 }
@@ -134,6 +201,16 @@ export default function DiagnosticoView({ setCurrentView, lotId = apiOptions.lot
   const [diagnosis, setDiagnosis] = useState<ApiRecord | null>(null);
   const [basin, setBasin] = useState<ApiRecord | null>(null);
   const [zoneFeatures, setZoneFeatures] = useState<ZoneFeature[]>([]);
+  const [lotDetail, setLotDetail] = useState<ApiRecord | null>(null);
+  const [predioDetail, setPredioDetail] = useState<ApiRecord | null>(null);
+  const [lotGeometry, setLotGeometry] = useState<Geometry | null>(null);
+  const [predioLocation, setPredioLocation] = useState<GpsCoordinate | null>(null);
+  const [lotLocation, setLotLocation] = useState<GpsCoordinate | null>(null);
+  const [lotBoundary, setLotBoundary] = useState<GpsCoordinate[]>([]);
+  const [locationEditorOpen, setLocationEditorOpen] = useState(false);
+  const [locationSaving, setLocationSaving] = useState(false);
+  const [locationError, setLocationError] = useState('');
+  const [locationSavedMessage, setLocationSavedMessage] = useState('');
   const [baseMaps, setBaseMaps] = useState(defaultBaseMaps);
   const [activeBaseMap, setActiveBaseMap] = useState(defaultBaseMaps[0].id);
   const [activeObjective, setActiveObjective] = useState('');
@@ -165,14 +242,58 @@ export default function DiagnosticoView({ setCurrentView, lotId = apiOptions.lot
     return () => { active = false; };
   }, [lotId]);
 
+  useEffect(() => {
+    let active = true;
+    setLotDetail(null);
+    setPredioDetail(null);
+    setLotGeometry(null);
+    setPredioLocation(null);
+    setLotLocation(null);
+    setLotBoundary([]);
+    const loadLocation = async () => {
+      try {
+        const response = await api.getLote(lotId);
+        if (!active) return;
+        const detail = isRecord(response.lote) ? response.lote : response;
+        setLotDetail(detail);
+        const geometry = readGeometry(detail.geom ?? detail.geometry);
+        setLotGeometry(geometry);
+        setLotBoundary(polygonBoundary(geometry));
+        const lotPoint = readGpsCoordinate(detail.ubicacion);
+        setLotLocation(lotPoint);
+        const predioId = String(detail.predio_id ?? '');
+        if (predioId) {
+          const predioResponse = await api.getPredio(predioId);
+          if (!active) return;
+          const predio = isRecord(predioResponse.predio) ? predioResponse.predio : predioResponse;
+          setPredioDetail(predio);
+          setPredioLocation(readGpsCoordinate(predio.ubicacion));
+        }
+      } catch (error) {
+        if (active) {
+          setLoadError((current) => [current, error instanceof Error ? error.message : 'No fue posible cargar los datos de ubicación.'].filter(Boolean).join(' '));
+        }
+      }
+    };
+    void loadLocation();
+    return () => { active = false; };
+  }, [lotId]);
+
   const visibleFeatures = useMemo(() => {
     if (!activeObjective) return zoneFeatures;
     const targetType = objectives.find((item) => item.id === activeObjective)?.tipo;
     return zoneFeatures.filter((feature) => feature.properties?.tipo === targetType);
   }, [activeObjective, zoneFeatures]);
   const selectedBaseMap = baseMaps.find((layer) => layer.id === activeBaseMap) ?? baseMaps[0];
-  const mapCenter = useMemo(() => zoneBounds(zoneFeatures)?.getCenter() ?? null, [zoneFeatures]);
+  const mapCenter = useMemo(
+    () => zoneBounds(zoneFeatures, lotGeometry, [predioLocation, lotLocation].filter((point): point is GpsCoordinate => point !== null))?.getCenter() ?? null,
+    [zoneFeatures, lotGeometry, predioLocation, lotLocation],
+  );
   const basinName = normalizeTitle(basin?.nombre);
+  const predioName = String(predioDetail?.nombre ?? lotDetail?.predio_nombre ?? 'Predio');
+  const lotName = String(lotDetail?.nombre ?? lotDetail?.nombre_lote ?? lotId);
+  const municipio = String(predioDetail?.municipio ?? lotDetail?.municipio ?? 'Sin dato');
+  const departamento = String(predioDetail?.departamento ?? lotDetail?.departamento ?? 'Sin dato');
   const precipitation = diagnosis?.precipitacion_anual_mm;
   const coverageLoss = diagnosis?.perdida_cobertura_pct;
   const riparianWidth = diagnosis?.franja_riparia_legal_m;
@@ -192,6 +313,40 @@ export default function DiagnosticoView({ setCurrentView, lotId = apiOptions.lot
     if (baseMaps.some((layer) => layer.id === activeBaseMap)) return;
     setActiveBaseMap(baseMaps[0].id);
   }, [activeBaseMap, baseMaps]);
+
+  const saveLocation = async () => {
+    const geometry = createLotPolygon(lotBoundary);
+    const lotCenter = getLotCenter(lotBoundary);
+    const propertyPoint = predioLocation ?? readGpsCoordinate(predioDetail?.ubicacion);
+    const predioId = String(lotDetail?.predio_id ?? '');
+    const currentLotId = String(lotDetail?.id ?? lotDetail?.lote_id ?? lotId);
+    if (!geometry || !lotCenter) {
+      setLocationError('El perímetro debe tener al menos tres vértices no alineados.');
+      return;
+    }
+    if (!propertyPoint || !predioId) {
+      setLocationError('Marca la ubicación del predio y verifica que la API haya devuelto su identificador.');
+      return;
+    }
+    setLocationSaving(true);
+    setLocationError('');
+    setLocationSavedMessage('');
+    try {
+      await api.updatePredio(predioId, { ubicacion: propertyPoint });
+      await api.updateLote(currentLotId, { geom: geometry, ubicacion: lotCenter });
+      setLotGeometry(readGeometry(geometry));
+      setLotLocation(lotCenter);
+      setPredioLocation(propertyPoint);
+      setPredioDetail((current) => current ? { ...current, ubicacion: propertyPoint } : current);
+      setLotDetail((current) => current ? { ...current, geom: geometry, ubicacion: lotCenter } : current);
+      setLocationSavedMessage('La ubicación del predio y el perímetro del lote quedaron guardados.');
+      setLocationEditorOpen(false);
+    } catch (error) {
+      setLocationError(error instanceof Error ? error.message : 'No fue posible guardar la ubicación. Puedes reintentar sin volver a crear el lote.');
+    } finally {
+      setLocationSaving(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6 animate-in fade-in duration-500">
@@ -218,13 +373,14 @@ export default function DiagnosticoView({ setCurrentView, lotId = apiOptions.lot
             <div className="flex items-center gap-3 bg-surface-container-low p-3 rounded-xl border border-surface-container">
               <MapPin className="text-primary-container w-5 h-5 ml-1 shrink-0" />
               <div className="min-w-0 flex-1">
-                <span className="block text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">Predio seleccionado</span>
-                <span className="block truncate text-xs font-semibold text-on-surface">{lotId}</span>
+                <span className="block text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">Predio · lote activo</span>
+                <span className="block truncate text-xs font-semibold text-on-surface">{predioName} · {lotName}</span>
+                <span className="block truncate text-[10px] text-on-surface-variant">{municipio}, {departamento}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setLocateRequest((request) => request + 1)}
-                disabled={!zoneFeatures.length}
+                disabled={!mapCenter}
                 className="bg-primary hover:bg-primary-container text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors whitespace-nowrap shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Enfocar mapa
@@ -331,36 +487,79 @@ export default function DiagnosticoView({ setCurrentView, lotId = apiOptions.lot
               <div>
                 <h3 className="font-epilogue text-xl font-bold text-primary flex items-center gap-2">
                   <Layers className="h-5 w-5 text-secondary" />
-                  {basinName || 'Mapa del predio'}
+                  {predioName || basinName || 'Mapa del predio'}
                 </h3>
                 <span className="text-xs text-on-surface-variant font-semibold">
                   {basin?.elevacion_msnm !== undefined ? `Elevación de cuenca: ${String(basin.elevacion_msnm)} msnm · ` : ''}
-                  {zoneFeatures.length} {zoneFeatures.length === 1 ? 'zona' : 'zonas'} con geometría
+                  {zoneFeatures.length} {zoneFeatures.length === 1 ? 'zona' : 'zonas'} · {lotGeometry ? 'perímetro del lote disponible' : 'sin perímetro del lote'}
                 </span>
               </div>
-              <div className="flex flex-wrap gap-1 rounded-lg bg-surface-container-low p-1" aria-label="Mapa base">
-                {baseMaps.map((layer) => <button
-                  key={layer.id}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap gap-1 rounded-lg bg-surface-container-low p-1" aria-label="Mapa base">
+                  {baseMaps.map((layer) => <button
+                    key={layer.id}
+                    type="button"
+                    aria-pressed={activeBaseMap === layer.id}
+                    onClick={() => setActiveBaseMap(layer.id)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${activeBaseMap === layer.id ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
+                  >{layer.nombre}</button>)}
+                </div>
+                <button
                   type="button"
-                  aria-pressed={activeBaseMap === layer.id}
-                  onClick={() => setActiveBaseMap(layer.id)}
-                  className={`rounded-md px-3 py-1.5 text-xs font-bold transition-colors ${activeBaseMap === layer.id ? 'bg-primary text-white shadow-sm' : 'text-on-surface-variant hover:text-on-surface'}`}
-                >{layer.nombre}</button>)}
+                  aria-expanded={locationEditorOpen}
+                  onClick={() => setLocationEditorOpen((open) => !open)}
+                  className="rounded-lg border border-secondary px-3 py-2 text-xs font-bold text-secondary hover:bg-secondary/5"
+                >{locationEditorOpen ? 'Cerrar editor' : 'Completar ubicación'}</button>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-surface-container bg-surface-container-low p-4">
+                <h4 className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">Predio</h4>
+                <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                  <dt className="text-on-surface-variant">Nombre</dt><dd className="font-semibold text-on-surface">{predioName}</dd>
+                  <dt className="text-on-surface-variant">Municipio</dt><dd className="font-semibold text-on-surface">{municipio}</dd>
+                  <dt className="text-on-surface-variant">Departamento</dt><dd className="font-semibold text-on-surface">{departamento}</dd>
+                  <dt className="text-on-surface-variant">Área</dt><dd className="font-semibold text-on-surface">{predioDetail?.area_ha === undefined ? 'Sin dato' : `${String(predioDetail.area_ha)} ha`}</dd>
+                  <dt className="text-on-surface-variant">Altitud</dt><dd className="font-semibold text-on-surface">{predioDetail?.altitud_msnm === undefined ? 'Sin dato' : `${String(predioDetail.altitud_msnm)} msnm`}</dd>
+                  <dt className="text-on-surface-variant">Descripción</dt><dd className="font-semibold text-on-surface">{String(predioDetail?.descripcion ?? 'Sin dato')}</dd>
+                </dl>
+              </div>
+              <div className="rounded-xl border border-surface-container bg-surface-container-low p-4">
+                <h4 className="text-xs font-bold uppercase tracking-wide text-on-surface-variant">Lote activo</h4>
+                <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                  <dt className="text-on-surface-variant">Nombre</dt><dd className="font-semibold text-on-surface">{lotName}</dd>
+                  <dt className="text-on-surface-variant">Área</dt><dd className="font-semibold text-on-surface">{lotDetail?.area_ha === undefined ? 'Sin dato' : `${String(lotDetail.area_ha)} ha`}</dd>
+                  <dt className="text-on-surface-variant">Altitud</dt><dd className="font-semibold text-on-surface">{lotDetail?.altitud_msnm === undefined ? 'Sin dato' : `${String(lotDetail.altitud_msnm)} msnm`}</dd>
+                  <dt className="text-on-surface-variant">Pendiente</dt><dd className="font-semibold text-on-surface">{lotDetail?.pendiente_grados === undefined ? 'Sin dato' : `${String(lotDetail.pendiente_grados)}°`}</dd>
+                  <dt className="text-on-surface-variant">Prioridad</dt><dd className="font-semibold capitalize text-on-surface">{String(lotDetail?.prioridad ?? 'Sin dato')}</dd>
+                  <dt className="text-on-surface-variant">Perímetro</dt><dd className="font-semibold text-on-surface">{lotBoundary.length >= 3 ? `${lotBoundary.length} vértices` : 'Sin geometría'}</dd>
+                </dl>
               </div>
             </div>
 
             <div className="relative h-[360px] w-full overflow-hidden rounded-xl border border-surface-container-high bg-slate-100 shadow-inner md:h-[420px]">
-              <ZoneMap allFeatures={zoneFeatures} visibleFeatures={visibleFeatures} baseMap={selectedBaseMap} locateRequest={locateRequest} />
+              <ZoneMap
+                allFeatures={zoneFeatures}
+                visibleFeatures={visibleFeatures}
+                baseMap={selectedBaseMap}
+                lotGeometry={lotGeometry}
+                predioLocation={predioLocation}
+                lotLocation={lotLocation}
+                locateRequest={locateRequest}
+              />
               {visibleFeatures.length === 0 && (
                 <div className="absolute left-1/2 top-4 z-[500] -translate-x-1/2 rounded-lg bg-white/95 px-3 py-2 text-center text-xs text-on-surface shadow">
                   {zoneFeatures.length === 0
-                    ? 'La API no devolvió geometrías para este predio.'
+                    ? 'No hay zonas ambientales registradas; se muestra la ubicación guardada del lote.'
                     : 'No hay zonas registradas para este objetivo.'}
                 </div>
               )}
-              {zoneFeatures.length > 0 && (
+              {(zoneFeatures.length > 0 || lotGeometry || predioLocation) && (
                 <div className="absolute bottom-4 left-4 z-[500] rounded-xl border border-surface-container bg-white/95 p-3 text-xs font-semibold shadow-md backdrop-blur">
-                  <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant"><Layers className="h-3.5 w-3.5" /> Zonas del predio</div>
+                  <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant"><Layers className="h-3.5 w-3.5" /> Referencias del mapa</div>
+                  {lotGeometry && <div className="mb-1 flex items-center gap-2"><span className="h-3 w-3 rounded-sm border border-green-700 bg-green-500/30" />Perímetro del lote</div>}
+                  {predioLocation && <div className="mb-1 flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-emerald-500" />Ubicación del predio</div>}
                   {[
                     ['siembra_prioritaria', 'Zona prioritaria', '#15803d'],
                     ['franja_riparia', 'Franja riparia', '#0284c7'],
@@ -380,7 +579,25 @@ export default function DiagnosticoView({ setCurrentView, lotId = apiOptions.lot
                 >Hídrica</button>
               </div>
             </div>
-            <p className="text-xs text-on-surface-variant">Puedes desplazarte, acercar y seleccionar las geometrías para ver su nombre. El backend entrega zonas; no expone el perímetro catastral del lote ni una capa de dosel NDVI.</p>
+            {locationEditorOpen && <div className="space-y-4 rounded-xl border border-surface-container bg-white p-4">
+              <div>
+                <h4 className="font-epilogue text-base font-bold text-primary">Ubicación geográfica</h4>
+                <p className="mt-1 text-xs leading-5 text-on-surface-variant">Actualiza el punto del predio y dibuja el perímetro real del lote. La información se guarda mediante los endpoints geográficos disponibles.</p>
+              </div>
+              <LocationPicker
+                predioLocation={predioLocation}
+                onPredioLocationChange={setPredioLocation}
+                lotBoundary={lotBoundary}
+                onLotBoundaryChange={setLotBoundary}
+                allowPredioLocation
+              />
+              {locationError && <p role="alert" className="rounded-lg bg-error/10 p-3 text-xs text-error">{locationError}</p>}
+              <button type="button" onClick={() => void saveLocation()} disabled={locationSaving} className="w-full rounded-full bg-primary-container px-5 py-3 text-sm font-bold text-white disabled:cursor-wait disabled:opacity-60">
+                {locationSaving ? 'Guardando ubicación…' : 'Guardar ubicación y perímetro'}
+              </button>
+            </div>}
+            {locationSavedMessage && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-xs font-semibold text-emerald-800">{locationSavedMessage}</p>}
+            <p className="text-xs text-on-surface-variant">El mapa combina zonas ambientales disponibles con el punto del predio y el perímetro del lote. Los campos que la API no entrega aparecen como “Sin dato”.</p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
               <div className="bg-surface-container-low p-3 rounded-xl flex items-center gap-3">

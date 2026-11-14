@@ -63,7 +63,7 @@ export default function LandingPage({ navigate }: Props) {
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-5 px-4 py-3 md:px-8">
           <a href="/" className="flex items-center gap-2 font-epilogue text-xl font-bold tracking-tight text-primary">
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-secondary-container"><Trees size={20} /></span>
-            Reforesta
+            ecorenace
           </a>
           <nav className="hidden items-center gap-6 text-sm font-semibold text-on-surface-variant lg:flex">
             <a className="hover:text-primary" href="#diagnostico">Diagnóstico</a>
@@ -89,7 +89,7 @@ export default function LandingPage({ navigate }: Props) {
                 <Microscope size={15} className="text-secondary" /> Plataforma bio-regional · Algoritmo bioclimático
               </span>
               <h1 className="max-w-3xl font-epilogue text-4xl font-bold leading-tight tracking-tight text-primary md:text-5xl">
-                Reforesta con sabiduría ecológica y precisión bioclimática
+                Restaura con sabiduría ecológica y precisión bioclimática
               </h1>
               <p className="max-w-2xl text-base leading-7 text-on-surface-variant md:text-lg">
                 Diagnóstico avanzado de suelo, retención hídrica y microclima. Obtén recomendaciones de flora nativa y planes de restauración para fincas, predios y corredores biológicos.
@@ -241,7 +241,7 @@ export default function LandingPage({ navigate }: Props) {
 
       <footer className="border-t border-outline-variant bg-surface-container-high px-4 py-5 md:px-8">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 text-center text-xs text-on-surface-variant md:flex-row md:text-left">
-          <div><strong className="text-primary">Reforesta</strong><p>© 2026 Reforesta Bio-Regional Stewardship Platform.</p></div>
+          <div><strong className="text-primary">ecorenace</strong><p>© 2026 ecorenace · Plataforma bio-regional de restauración.</p></div>
           <div className="flex flex-wrap justify-center gap-4"><a href="#impacto">Privacidad</a><a href="#metodologia">Marco ecológico</a><a href="#especies">Flora nativa</a><button onClick={() => navigate('/login')} className="hover:text-primary">Iniciar sesión</button></div>
         </div>
       </footer>

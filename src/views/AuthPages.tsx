@@ -22,7 +22,7 @@ const fieldClass = 'w-full rounded-xl border border-outline-variant bg-surface p
 
 function BrandLink({ navigate }: { navigate: (path: string) => void }) {
   return <button type="button" onClick={() => navigate('/')} className="inline-flex items-center gap-2 font-epilogue text-xl font-bold tracking-tight text-primary">
-    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-secondary-container"><Trees size={20} /></span>Reforesta
+    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-secondary-container"><Trees size={20} /></span>ecorenace
   </button>;
 }
 
@@ -77,7 +77,7 @@ function AuthLayout({ children, navigate, registration = false }: Pick<Props, 'n
         </section>
       </main>
       <footer className="border-t border-outline-variant/40 bg-surface-container-high px-5 py-4 text-center text-xs text-on-surface-variant">
-        © 2026 Reforesta Bio-Regional Stewardship Platform. <span className="mx-2 hidden sm:inline">·</span><a className="hover:text-primary" href="/">Inicio</a>
+        © 2026 ecorenace · Plataforma bio-regional de restauración. <span className="mx-2 hidden sm:inline">·</span><a className="hover:text-primary" href="/">Inicio</a>
       </footer>
     </div>
   );
@@ -147,7 +147,7 @@ export function LoginPage({ navigate, onLogin, onGoogleAuth, sessionError = '' }
       <div className="relative mb-5 text-center"><div className="border-t border-outline-variant/60" /><span className="relative -top-3 bg-white px-3 text-xs text-outline">o continúa con correo electrónico</span></div>
 
       <form className="space-y-4" onSubmit={submit}>
-        <label className="block space-y-1.5"><span className="text-sm font-semibold">Correo electrónico</span><span className="relative block"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={18} /><input className={`${fieldClass} pl-10`} type="email" autoComplete="email" placeholder="ejemplo@reforesta.org" value={email} onChange={(event) => setEmail(event.target.value)} required /></span></label>
+        <label className="block space-y-1.5"><span className="text-sm font-semibold">Correo electrónico</span><span className="relative block"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={18} /><input className={`${fieldClass} pl-10`} type="email" autoComplete="email" placeholder="ejemplo@correo.com" value={email} onChange={(event) => setEmail(event.target.value)} required /></span></label>
         <label className="block space-y-1.5"><span className="flex items-center justify-between text-sm font-semibold">Contraseña <button type="button" onClick={() => setError('La recuperación de contraseña estará disponible cuando conectemos el servicio de autenticación.')} className="text-xs font-bold text-secondary hover:underline">¿Olvidaste tu contraseña?</button></span><span className="relative block"><LockKeyhole className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={18} /><input className={`${fieldClass} pl-10 pr-12`} type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="Ingresa tu contraseña" value={password} onChange={(event) => setPassword(event.target.value)} required /><button type="button" aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'} onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 text-outline">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></span></label>
         <label className="flex items-center gap-2 text-sm text-on-surface-variant"><input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} className="rounded border-outline-variant text-primary focus:ring-secondary" /> Recordar mi sesión</label>
         {sessionError && <p role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">{sessionError}</p>}
@@ -237,7 +237,7 @@ export function RegisterPage({ navigate, onRegister, onGoogleAuth }: RegisterPro
           <label className="space-y-1"><span className="text-xs font-semibold">Nombre(s) *</span><input className={fieldClass} name="firstName" placeholder="Ej. Mateo" autoComplete="given-name" required /></label>
           <label className="space-y-1"><span className="text-xs font-semibold">Apellidos *</span><input className={fieldClass} name="lastName" placeholder="Ej. Arboleda Serna" autoComplete="family-name" required /></label>
         </div>
-        <label className="block space-y-1"><span className="text-xs font-semibold">Correo electrónico *</span><span className="relative block"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={17} /><input className={`${fieldClass} pl-10`} name="email" type="email" autoComplete="email" placeholder="custodio@reforesta.org" required /></span></label>
+        <label className="block space-y-1"><span className="text-xs font-semibold">Correo electrónico *</span><span className="relative block"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={17} /><input className={`${fieldClass} pl-10`} name="email" type="email" autoComplete="email" placeholder="custodio@correo.com" required /></span></label>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block space-y-1"><span className="text-xs font-semibold">Contraseña *</span><span className="relative block"><LockKeyhole className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" size={16} /><input className={`${fieldClass} pl-10 pr-10`} name="password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder="Mínimo 8 caracteres" value={password} onChange={(event) => setPassword(event.target.value)} required /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 text-outline" aria-label="Mostrar u ocultar contraseña">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></span></label>

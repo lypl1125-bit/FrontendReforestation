@@ -20,6 +20,16 @@ let lots: ApiRecord[] = [{
   area_ha: 12.5,
   municipio: 'Ibagué',
   departamento: 'Tolima',
+  ubicacion: { lat: 4.4701, lng: -75.2901 },
+  geom: { type: 'Polygon', coordinates: [[[-75.291, 4.471], [-75.289, 4.471], [-75.289, 4.469], [-75.291, 4.469], [-75.291, 4.471]]] },
+}];
+let predios: ApiRecord[] = [{
+  id: 'predio-demo',
+  nombre: 'Predio Valle Verde',
+  municipio: 'Ibagué',
+  departamento: 'Tolima',
+  area_ha: 12.5,
+  ubicacion: { lat: 4.4701, lng: -75.2901 },
 }];
 let projects: ApiRecord[] = [];
 
@@ -172,8 +182,25 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
   const body = recordBody(init);
   let result: unknown;
 
-  if (method === 'GET' && segments.length === 0) result = { Msg: 'Welcome to the Reforestation API!' };
+  if (method === 'GET' && segments.length === 0) result = { Msg: 'Welcome to the ecorenace API!' };
   else if (segments.join('/') === 'lotes' && method === 'GET') result = { lotes: [...lots] };
+  else if (segments[0] === 'lotes' && segments.length === 2 && method === 'GET') {
+    result = lots.find((lot) => String(lot.id ?? lot.lote_id) === segments[1]);
+    if (!result) return notFound(`No existe el lote ${segments[1]}.`);
+  } else if (segments[0] === 'lotes' && segments.length === 2 && method === 'PATCH') {
+    const lot = lots.find((item) => String(item.id ?? item.lote_id) === segments[1]);
+    if (!lot) return notFound(`No existe el lote ${segments[1]}.`);
+    result = { ...lot, ...body };
+    lots[lots.indexOf(lot)] = result as ApiRecord;
+  } else if (segments[0] === 'predios' && segments.length === 2 && method === 'GET') {
+    result = predios.find((item) => String(item.id ?? item.predio_id) === segments[1]);
+    if (!result) return notFound(`No existe el predio ${segments[1]}.`);
+  } else if (segments[0] === 'predios' && segments.length === 2 && method === 'PATCH') {
+    const predio = predios.find((item) => String(item.id ?? item.predio_id) === segments[1]);
+    if (!predio) return notFound(`No existe el predio ${segments[1]}.`);
+    result = { ...predio, ...body };
+    predios[predios.indexOf(predio)] = result as ApiRecord;
+  }
   else if (segments.join('/') === 'predios' && method === 'POST') {
     const predio = body as ApiRecord;
     const firstLot = predio.primer_lote as ApiRecord;
@@ -187,6 +214,7 @@ export async function mockRequest<T>(path: string, init?: RequestInit): Promise<
       municipio: String(predio.municipio ?? ''),
       departamento: String(predio.departamento ?? ''),
     };
+    predios = [...predios, { ...predio, id: predioId }];
     lots = [...lots, lot];
     result = { predio: { ...predio, id: predioId }, lote: lot };
   } else if (segments[0] === 'predios' && segments[2] === 'lotes' && method === 'POST') {

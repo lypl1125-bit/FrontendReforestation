@@ -302,7 +302,7 @@ export default function App() {
   if (route === '/app/setup' || (route === '/app' && lots.length === 0)) return (
     <div className="min-h-screen bg-surface px-4 py-6 sm:px-8">
       <header className="mx-auto mb-8 flex max-w-5xl items-center justify-between">
-        <span className="font-epilogue text-xl font-bold text-primary">Reforesta · Mi espacio</span>
+        <span className="font-epilogue text-xl font-bold text-primary">ecorenace · Mi espacio</span>
         <button type="button" onClick={logout} className="rounded-full border border-outline-variant px-4 py-2 text-sm font-semibold text-on-surface-variant">Salir</button>
       </header>
       <WorkspaceSetupView
