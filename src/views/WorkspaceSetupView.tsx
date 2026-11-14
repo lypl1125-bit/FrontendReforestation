@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { ArrowRight, CheckCircle2, MapPin, Sprout, Trees } from 'lucide-react';
 import { api, type ApiRecord } from '../services/api';
+import { positiveArea } from '../services/areaValidation';
 
 type Props = {
   existingLots?: ApiRecord[];
@@ -29,24 +30,54 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
+    const lotName = String(formData.get('lotName')).trim();
+    const projectName = String(formData.get('projectName')).trim();
+    const lotArea = positiveArea(formData.get('lotArea'));
+    if (!projectName) {
+      setError('Ingresa el nombre del proyecto.');
+      return;
+    }
+    if (!lotArea) {
+      setError('El área del lote debe ser positiva y tener máximo dos decimales.');
+      return;
+    }
+    if (!lotName) {
+      setError('Ingresa el nombre del lote.');
+      return;
+    }
+    const predioArea = addToExistingPredio ? null : positiveArea(formData.get('predioArea'));
+    if (!addToExistingPredio && !predioArea) {
+      setError('El área del predio debe ser positiva y tener máximo dos decimales.');
+      return;
+    }
+    const predioName = String(formData.get('predioName') ?? '').trim();
+    const municipality = String(formData.get('municipality') ?? '').trim();
+    const department = String(formData.get('department') ?? '').trim();
+    if (!addToExistingPredio && (!predioName || !municipality || !department)) {
+      setError('Completa el nombre del predio, el municipio y el departamento.');
+      return;
+    }
+    if (predioArea !== null && lotArea > predioArea) {
+      setError('El área del primer lote no puede superar el área total del predio.');
+      return;
+    }
     setSaving(true);
     setError('');
     setProjectError('');
     try {
-      const lotName = String(formData.get('lotName')).trim();
-      const lotArea = Number(formData.get('lotArea'));
       let lot: ApiRecord;
       if (addToExistingPredio) {
         const predioId = String(formData.get('existingPredio'));
         const selectedPredio = predios.find((item) => item.id === predioId);
-        const response = await api.createLote(predioId, { nombre: lotName, area_ha: lotArea });
+        const response = await api.createLote(predioId, { codigo: lotName, nombre: lotName, area_ha: lotArea });
         lot = { ...response, predio_nombre: selectedPredio?.nombre ?? 'Predio registrado' };
       } else {
+        if (predioArea === null) throw new Error('El área del predio es obligatoria.');
         const response = await api.createPredio({
-          nombre: String(formData.get('predioName')).trim(),
-          municipio: String(formData.get('municipality')).trim(),
-          departamento: String(formData.get('department')).trim(),
-          area_ha: Number(formData.get('predioArea')),
+          nombre: predioName,
+          municipio: municipality,
+          departamento: department,
+          area_ha: predioArea,
           primer_lote: { nombre: lotName, area_ha: lotArea },
         });
         const rawLot = response.lote;
@@ -59,7 +90,7 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
       if (!lotId) throw new Error('La API creó el lote sin devolver su identificador.');
       try {
         const project = await api.createProyecto(lotId, {
-          nombre: String(formData.get('projectName')).trim(),
+          nombre: projectName,
           patron: 'tresbolillo',
           espaciado_m: 3,
           area_restaurada_m2: Number(lot.area_ha ?? 0) * 10000,
@@ -115,7 +146,7 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
             <label className="space-y-1.5 text-xs font-semibold sm:col-span-2">Nombre del predio<input className={fieldClass} name="predioName" placeholder="Ej. Finca La Esperanza" required /></label>
             <label className="space-y-1.5 text-xs font-semibold">Municipio<input className={fieldClass} name="municipality" placeholder="Ej. Ibagué" required /></label>
             <label className="space-y-1.5 text-xs font-semibold">Departamento / región<input className={fieldClass} name="department" placeholder="Ej. Tolima" required /></label>
-            <label className="space-y-1.5 text-xs font-semibold">Área total aproximada (ha)<input className={fieldClass} name="predioArea" type="number" min="0.01" step="0.01" placeholder="12.5" required /></label>
+            <label className="space-y-1.5 text-xs font-semibold">Área total aproximada (ha)<input className={fieldClass} name="predioArea" type="number" min="0.01" step="any" placeholder="12.5" required /></label>
           </div>
           </>}
         </div>
@@ -125,7 +156,7 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
           <p className="mb-3 text-xs leading-5 text-on-surface-variant">Un predio puede tener varios lotes. Más adelante podrás agregar otros y alternar entre ellos.</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1.5 text-xs font-semibold">Nombre del lote<input className={fieldClass} name="lotName" placeholder="Ej. Ladera norte" required /></label>
-            <label className="space-y-1.5 text-xs font-semibold">Área del lote (ha)<input className={fieldClass} name="lotArea" type="number" min="0.01" step="0.01" placeholder="4.2" required /></label>
+            <label className="space-y-1.5 text-xs font-semibold">Área del lote (ha)<input className={fieldClass} name="lotArea" type="number" min="0.01" step="any" placeholder="4.2" required /></label>
           </div>
         </div>
 

@@ -53,6 +53,7 @@ export type PredioCreate = {
 };
 
 export type LoteCreate = {
+  codigo?: string;
   nombre: string;
   area_ha: number;
 };
@@ -193,9 +194,10 @@ export const api = {
     request<unknown>('/auth/login', json('POST', { email, password }), false),
   register: (email: string, password: string, fullName: string) =>
     request<unknown>('/auth/register', json('POST', { email, password, full_name: fullName }), false),
-  startGoogleAuth: () => request<{ authorization_url: string }>('/auth/google', undefined, false),
-  exchangeGoogleCode: (code: string) =>
-    request<unknown>('/auth/google/callback', json('POST', { code }), false),
+  startGoogleAuth: (codeChallenge: string) =>
+    request<{ authorization_url: string }>(`/auth/google${query({ code_challenge: codeChallenge })}`, undefined, false),
+  exchangeGoogleCode: (code: string, codeVerifier: string) =>
+    request<unknown>('/auth/google/callback', json('POST', { code, code_verifier: codeVerifier }), false),
   getCurrentUser: () => request<unknown>('/auth/me'),
   listLotes: () => request<unknown>('/lotes'),
   createPredio: (body: PredioCreate) => request<ApiRecord>('/predios', json('POST', body)),

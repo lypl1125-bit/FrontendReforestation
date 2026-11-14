@@ -11,6 +11,7 @@ import WorkspaceSetupView from './views/WorkspaceSetupView';
 import { LoginPage, RegisterPage } from './views/AuthPages';
 import { ViewState } from './types';
 import { api, apiOptions, ApiError, AuthSession, AuthUser, ApiRecord, parseAuthSession, parseAuthUser, setAccessToken } from './services/api';
+import { createPkcePair, GOOGLE_PKCE_VERIFIER_STORAGE_KEY } from './services/pkce';
 
 const AUTH_STORAGE_KEY = 'reforesta-auth-session';
 const DEMO_USER_KEY = 'reforesta-demo-user';
@@ -129,13 +130,18 @@ export default function App() {
   const authenticate = async (session: AuthSession, remember: boolean) => {
     if (apiOptions.dataSource === 'api') {
       setAccessToken(session.accessToken);
-      const currentUser = parseAuthUser(await api.getCurrentUser());
-      const storage = remember ? localStorage : sessionStorage;
-      const otherStorage = remember ? sessionStorage : localStorage;
-      otherStorage.removeItem(AUTH_STORAGE_KEY);
-      storage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ accessToken: session.accessToken }));
-      setUser(currentUser);
-      setAuthError('');
+      try {
+        const currentUser = parseAuthUser(await api.getCurrentUser());
+        const storage = remember ? localStorage : sessionStorage;
+        const otherStorage = remember ? sessionStorage : localStorage;
+        otherStorage.removeItem(AUTH_STORAGE_KEY);
+        storage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ accessToken: session.accessToken }));
+        setUser(currentUser);
+        setAuthError('');
+      } catch (error) {
+        setAccessToken(null);
+        throw error;
+      }
     } else {
       sessionStorage.setItem(DEMO_USER_KEY, JSON.stringify(session.user));
       setUser(session.user);
@@ -160,42 +166,66 @@ export default function App() {
     }
     const result = await api.register(email, password, fullName);
     const session = parseAuthSession(result, email);
-    return session !== null;
+    if (!session) return false;
+    await authenticate(session, false);
+    return true;
   };
 
   const startGoogleAuth = async () => {
     if (apiOptions.dataSource !== 'api' || !apiOptions.googleAuthEnabled) {
       throw new Error('El inicio con Google no está habilitado para este entorno.');
     }
-    const response = await api.startGoogleAuth();
-    const authorizationUrl = new URL(response.authorization_url);
-    if (!['https:', 'http:'].includes(authorizationUrl.protocol)) {
-      throw new Error('La API devolvió una URL de autorización no válida.');
+    const { verifier, challenge } = await createPkcePair();
+    sessionStorage.setItem(GOOGLE_PKCE_VERIFIER_STORAGE_KEY, verifier);
+    try {
+      const response = await api.startGoogleAuth(challenge);
+      const authorizationUrl = new URL(response.authorization_url);
+      const localHttpHost = ['localhost', '127.0.0.1', '[::1]'].includes(authorizationUrl.hostname);
+      if (authorizationUrl.protocol !== 'https:' && !(authorizationUrl.protocol === 'http:' && localHttpHost)) {
+        throw new Error('La API devolvió una URL de autorización no segura.');
+      }
+      window.location.assign(authorizationUrl.toString());
+    } catch (error) {
+      sessionStorage.removeItem(GOOGLE_PKCE_VERIFIER_STORAGE_KEY);
+      throw error;
     }
-    window.location.assign(authorizationUrl.toString());
   };
 
   useEffect(() => {
     if (route !== '/auth/callback') return;
     const callbackUrl = new URL(window.location.href);
     const code = callbackUrl.searchParams.get('code') ?? '';
+    const providerError = callbackUrl.searchParams.has('error');
+    const verifier = sessionStorage.getItem(GOOGLE_PKCE_VERIFIER_STORAGE_KEY);
+    window.history.replaceState({}, '', '/auth/callback');
+    if (providerError) {
+      sessionStorage.removeItem(GOOGLE_PKCE_VERIFIER_STORAGE_KEY);
+      setGoogleCallbackError('Google canceló o rechazó el acceso. Puedes volver a iniciar sesión.');
+      return;
+    }
     if (!code) {
+      sessionStorage.removeItem(GOOGLE_PKCE_VERIFIER_STORAGE_KEY);
       setGoogleCallbackError('No se recibió el código de autorización. Intenta iniciar sesión de nuevo.');
+      return;
+    }
+    if (!verifier) {
+      setGoogleCallbackError('La sesión segura de Google expiró. Inicia el acceso de nuevo.');
       return;
     }
     if (handledGoogleCode.current === code) return;
     handledGoogleCode.current = code;
     setGoogleCallbackLoading(true);
     setGoogleCallbackError('');
-    api.exchangeGoogleCode(code)
+    api.exchangeGoogleCode(code, verifier)
       .then((response) => {
         const session = parseAuthSession(response, '');
         if (!session) throw new Error('El backend no devolvió una sesión válida de Google.');
-        window.history.replaceState({}, '', '/auth/callback');
+        sessionStorage.removeItem(GOOGLE_PKCE_VERIFIER_STORAGE_KEY);
         return authenticate(session, false);
       })
       .catch((error: unknown) => {
         setGoogleCallbackError(error instanceof Error ? error.message : 'No fue posible completar el acceso con Google.');
+        sessionStorage.removeItem(GOOGLE_PKCE_VERIFIER_STORAGE_KEY);
       })
       .finally(() => setGoogleCallbackLoading(false));
   }, [route]);
@@ -249,6 +279,7 @@ export default function App() {
     sessionStorage.removeItem(DEMO_USER_KEY);
     localStorage.removeItem(AUTH_STORAGE_KEY);
     sessionStorage.removeItem(AUTH_STORAGE_KEY);
+    sessionStorage.removeItem(GOOGLE_PKCE_VERIFIER_STORAGE_KEY);
     setAccessToken(null);
     setUser(null);
     setLots([]);
@@ -279,10 +310,11 @@ export default function App() {
         onCancel={lots.length ? () => navigate('/app') : undefined}
         onComplete={(lot, projectId) => {
           const lotId = idOf(lot);
-          setLots((current) => [...current.filter((item) => idOf(item) !== lotId), lot]);
           setActiveLotId(lotId);
           setActiveProjectId(projectId ?? '');
+          setWorkspaceReady(false);
           setWorkspaceError('');
+          setWorkspaceReload((value) => value + 1);
           navigate('/app');
         }}
       />

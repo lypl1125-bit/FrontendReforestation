@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ApiRecord } from '../src/services/api.ts';
+import { positiveArea } from '../src/services/areaValidation.ts';
 import { mockRequest } from '../src/services/mockApi.ts';
+
+test('accepts only positive areas with at most two decimal places', () => {
+  assert.equal(positiveArea('10'), 10);
+  assert.equal(positiveArea('4.25'), 4.25);
+  assert.equal(positiveArea('0'), null);
+  assert.equal(positiveArea('-1'), null);
+  assert.equal(positiveArea('1.234'), null);
+  assert.equal(positiveArea('not-an-area'), null);
+  assert.equal(positiveArea(null), null);
+});
 
 test('creates a predio, multiple lots, and projects scoped to each lot', async () => {
   const firstWorkspace = await mockRequest<ApiRecord>('/predios', {
