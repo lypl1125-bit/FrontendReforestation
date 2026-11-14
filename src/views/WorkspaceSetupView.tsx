@@ -221,18 +221,6 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
         </div>
       </div>
 
-      <div>
-        <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-primary"><MapPin size={17} /> Ubicación y perímetro</h2>
-        <p className="mb-3 text-xs leading-5 text-on-surface-variant">Marca un punto de referencia del predio y traza el contorno del lote. La ubicación se guarda en el mapa.</p>
-        <LocationPicker
-          predioLocation={predioLocation}
-          onPredioLocationChange={setPredioLocation}
-          lotBoundary={lotBoundary}
-          onLotBoundaryChange={setLotBoundary}
-          allowPredioLocation={!addToExistingPredio}
-        />
-      </div>
-
       <form className="space-y-7" onSubmit={submit}>
         <div>
           {predios.length > 0 && <label className="mb-4 flex items-center gap-2 text-sm font-semibold text-on-surface-variant"><input type="checkbox" checked={addToExistingPredio} onChange={(event) => setAddToExistingPredio(event.target.checked)} className="rounded border-outline-variant text-primary focus:ring-secondary" />Agregar el lote a un predio existente</label>}
@@ -254,6 +242,18 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
             <label className="space-y-1.5 text-xs font-semibold">Nombre del lote<input className={fieldClass} name="lotName" placeholder="Ej. Ladera norte" required /></label>
             <label className="space-y-1.5 text-xs font-semibold">Área del lote (ha)<input className={fieldClass} name="lotArea" type="number" min="0.01" step="any" placeholder="4.2" required /></label>
           </div>
+        </div>
+
+        <div>
+          <h2 className="mb-1 flex items-center gap-2 text-sm font-bold text-primary"><MapPin size={17} /> Ubicación y perímetro</h2>
+          <p className="mb-3 text-xs leading-5 text-on-surface-variant">Marca un punto de referencia del predio y traza el contorno del lote. La ubicación se guarda en el mapa.</p>
+          <LocationPicker
+            predioLocation={predioLocation}
+            onPredioLocationChange={setPredioLocation}
+            lotBoundary={lotBoundary}
+            onLotBoundaryChange={setLotBoundary}
+            allowPredioLocation={!addToExistingPredio}
+          />
         </div>
 
         <div>

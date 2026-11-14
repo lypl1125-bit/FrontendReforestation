@@ -50,18 +50,6 @@ function readGeometry(value: unknown): Geometry | null {
     : null;
 }
 
-function geometryPoints(value: unknown): GpsCoordinate[] {
-  if (!Array.isArray(value)) return [];
-  if (value.length >= 2 && typeof value[0] === 'number' && typeof value[1] === 'number') {
-    const lng = value[0];
-    const lat = value[1];
-    return Number.isFinite(lat) && lat >= -90 && lat <= 90 && Number.isFinite(lng) && lng >= -180 && lng <= 180
-      ? [{ lat, lng }]
-      : [];
-  }
-  return value.flatMap(geometryPoints);
-}
-
 function polygonBoundary(geometry: Geometry | null): GpsCoordinate[] {
   if (!geometry || geometry.type !== 'Polygon') return [];
   const ring = geometry.coordinates[0];

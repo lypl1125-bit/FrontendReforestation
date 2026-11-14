@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, useMapEvents } from 'react-leaflet';
+import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, useMap, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
 import { Map, MapPin, RotateCcw, Trash2 } from 'lucide-react';
 import type { GpsCoordinate } from '../services/api';
 
@@ -13,6 +14,20 @@ type Props = {
 };
 
 type SelectionMode = 'predio' | 'lote';
+
+function InitialMapViewport({ points }: { points: GpsCoordinate[] }) {
+  const map = useMap();
+  const didFit = useRef(false);
+  useEffect(() => {
+    if (didFit.current || points.length === 0) return;
+    const bounds = L.latLngBounds(points.map(({ lat, lng }) => [lat, lng]));
+    if (bounds.isValid()) {
+      map.fitBounds(bounds.pad(0.18), { maxZoom: 15 });
+      didFit.current = true;
+    }
+  }, [map, points]);
+  return null;
+}
 
 function MapClickHandler({ mode, allowPredioLocation, onPredioLocationChange, onLotBoundaryChange }: {
   mode: SelectionMode;
@@ -49,6 +64,10 @@ export default function LocationPicker({
   const instructions = mode === 'predio'
     ? 'Haz clic en el mapa para marcar el punto de referencia del predio.'
     : 'Haz clic en el mapa para dibujar el perímetro del lote. Marca al menos tres vértices.';
+  const savedPoints = useMemo(
+    () => [...lotBoundary, ...(predioLocation ? [predioLocation] : [])],
+    [lotBoundary, predioLocation],
+  );
 
   return (
     <div className="space-y-3">
@@ -85,6 +104,7 @@ export default function LocationPicker({
             attribution="&copy; OpenStreetMap contributors"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          <InitialMapViewport points={savedPoints} />
           <MapClickHandler
             mode={mode}
             allowPredioLocation={allowPredioLocation}
