@@ -39,7 +39,7 @@ export function getLotCenter(points: GpsCoordinate[]): GpsCoordinate | null {
   }
   if (Math.abs(twiceArea) < 1e-10) return null;
   return {
-    lng: longitudeTotal / (3 * twiceArea),
-    lat: latitudeTotal / (3 * twiceArea),
+    lng: Number((longitudeTotal / (3 * twiceArea)).toFixed(6)),
+    lat: Number((latitudeTotal / (3 * twiceArea)).toFixed(6)),
   };
 }

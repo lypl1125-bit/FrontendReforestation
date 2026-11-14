@@ -166,6 +166,10 @@ function ZoneMap({ allFeatures, visibleFeatures, baseMap, lotGeometry, predioLoc
   locateRequest: number;
 }) {
   const visibleData = useMemo<FeatureCollection<Geometry, Record<string, unknown>>>(() => ({ type: 'FeatureCollection', features: visibleFeatures }), [visibleFeatures]);
+  const locations = useMemo(
+    () => [predioLocation, lotLocation].filter((point): point is GpsCoordinate => point !== null),
+    [predioLocation, lotLocation],
+  );
   return (
     <MapContainer center={[0, 0]} zoom={2} scrollWheelZoom className="h-full w-full">
       <TileLayer attribution={baseMap.atribucion} url={baseMap.url} />
@@ -181,7 +185,7 @@ function ZoneMap({ allFeatures, visibleFeatures, baseMap, lotGeometry, predioLoc
         }}
       />}
       {lotGeometry && <GeoJSONLayer
-        key={`${baseMap.id}-lot`}
+        key={`${baseMap.id}-lot-${JSON.stringify(lotGeometry)}`}
         data={{ type: 'Feature', properties: { nombre: 'Perímetro del lote' }, geometry: lotGeometry }}
         style={{ color: '#15803d', weight: 3, fillColor: '#22c55e', fillOpacity: 0.18 }}
       />}
@@ -190,7 +194,7 @@ function ZoneMap({ allFeatures, visibleFeatures, baseMap, lotGeometry, predioLoc
       <MapViewport
         features={allFeatures}
         lotGeometry={lotGeometry}
-        locations={[predioLocation, lotLocation].filter((point): point is GpsCoordinate => point !== null)}
+        locations={locations}
         locateRequest={locateRequest}
       />
     </MapContainer>
@@ -244,6 +248,7 @@ export default function DiagnosticoView({ setCurrentView, lotId = apiOptions.lot
 
   useEffect(() => {
     let active = true;
+    setLoadError('');
     setLotDetail(null);
     setPredioDetail(null);
     setLotGeometry(null);

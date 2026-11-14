@@ -19,8 +19,8 @@ export default function TopBar({ userName, onLogout, lots = [], projects = [], a
     <header className="fixed top-0 left-0 md:left-72 right-0 h-16 md:h-20 bg-surface/80 backdrop-blur-xl shadow-sm z-40 flex items-center justify-between px-4 md:px-8 border-b border-surface-container">
       <div className="flex items-center gap-4">
         <div className="md:hidden font-epilogue font-bold text-primary text-xl flex items-center gap-2">
-          <div className="w-6 h-6 bg-primary rounded text-white flex items-center justify-center text-xs">R</div>
-          Reforest
+          <div className="w-6 h-6 bg-primary rounded text-white flex items-center justify-center text-xs">E</div>
+          ecorenace
         </div>
         <span className="hidden text-sm font-medium text-on-surface-variant md:inline">Espacio de trabajo</span>
       </div>

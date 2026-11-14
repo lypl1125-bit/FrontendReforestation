@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ApiRecord } from '../src/services/api.ts';
 import { positiveArea } from '../src/services/areaValidation.ts';
+import { createLotPolygon, getLotCenter } from '../src/services/location.ts';
 import { mockRequest } from '../src/services/mockApi.ts';
 
 test('accepts only positive areas with at most two decimal places', () => {
@@ -54,4 +55,59 @@ test('creates a predio, multiple lots, and projects scoped to each lot', async (
   assert.ok(lots.some((lot) => String(lot.id) === secondLotId));
   assert.equal(String(firstLotProjects.id), String((projects.proyectos as ApiRecord[])[0].id));
   assert.equal((secondLotProjects.proyectos as ApiRecord[]).length, 1);
+});
+
+test('creates a closed GeoJSON perimeter and rejects invalid polygons', () => {
+  const points = [
+    { lat: 4, lng: -75 },
+    { lat: 4, lng: -74.99 },
+    { lat: 4.01, lng: -74.99 },
+    { lat: 4.01, lng: -75 },
+  ];
+  const polygon = createLotPolygon(points);
+  assert.equal(polygon?.type, 'Polygon');
+  assert.deepEqual(polygon?.coordinates, [[[-75, 4], [-74.99, 4], [-74.99, 4.01], [-75, 4.01], [-75, 4]]]);
+  assert.deepEqual(getLotCenter(points), { lat: 4.005, lng: -74.995 });
+  assert.equal(createLotPolygon(points.slice(0, 2)), null);
+  assert.equal(createLotPolygon([{ lat: 4, lng: -75 }, { lat: 4.01, lng: -75 }, { lat: 4.02, lng: -75 }]), null);
+});
+
+test('persists and reads predio and lot location data in the mock API', async () => {
+  const workspace = await mockRequest<ApiRecord>('/predios', {
+    method: 'POST',
+    body: JSON.stringify({
+      nombre: 'Finca geográfica',
+      municipio: 'Ibagué',
+      departamento: 'Tolima',
+      area_ha: 5,
+      primer_lote: { nombre: 'Lote geográfico', area_ha: 2 },
+    }),
+  });
+  const predio = workspace.predio as ApiRecord;
+  const lot = workspace.lote as ApiRecord;
+  const location = { lat: 4.45, lng: -75.23 };
+  const geometry = createLotPolygon([
+    { lat: 4.45, lng: -75.23 },
+    { lat: 4.45, lng: -75.22 },
+    { lat: 4.46, lng: -75.22 },
+  ]);
+  assert.ok(geometry);
+
+  await mockRequest(`/predios/${String(predio.id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ubicacion: location }),
+  });
+  await mockRequest(`/lotes/${String(lot.id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ ubicacion: getLotCenter([
+      { lat: 4.45, lng: -75.23 },
+      { lat: 4.45, lng: -75.22 },
+      { lat: 4.46, lng: -75.22 },
+    ]), geom: geometry }),
+  });
+
+  const savedPredio = await mockRequest<ApiRecord>(`/predios/${String(predio.id)}`);
+  const savedLot = await mockRequest<ApiRecord>(`/lotes/${String(lot.id)}`);
+  assert.deepEqual(savedPredio.ubicacion, location);
+  assert.equal((savedLot.geom as ApiRecord).type, 'Polygon');
 });

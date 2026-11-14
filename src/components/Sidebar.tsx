@@ -18,9 +18,9 @@ export default function Sidebar({ currentView, setCurrentView, lotName = 'Selecc
     <aside className="fixed left-0 top-0 h-full w-72 bg-surface-container-low z-50 flex-col justify-between py-6 hidden md:flex border-r border-surface-container shadow-sm">
       <div className="flex flex-col gap-6">
         <div className="px-6 flex items-center gap-3">
-          <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center text-white font-epilogue font-bold">R</div>
+          <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center text-white font-epilogue font-bold">E</div>
           <div className="flex flex-col">
-            <span className="font-epilogue font-bold text-primary tracking-tight text-lg leading-tight">Reforest</span>
+            <span className="font-epilogue font-bold text-primary tracking-tight text-lg leading-tight">ecorenace</span>
             <span className="text-[10px] text-on-surface-variant font-bold uppercase tracking-wider">Restauración ecológica</span>
           </div>
         </div>

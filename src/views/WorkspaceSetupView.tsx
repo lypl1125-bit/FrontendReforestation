@@ -39,10 +39,9 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
     const geometry = createLotPolygon(lotBoundary);
     const center = getLotCenter(lotBoundary);
     if (!lotId || !geometry || !center) throw new Error('Dibuja un perímetro válido con al menos tres vértices antes de guardar.');
-    if (predioId) {
-      if (!predioLocation) throw new Error('Marca la ubicación del predio en el mapa.');
-      await api.updatePredio(predioId, { ubicacion: predioLocation });
-    }
+    if (!predioId) throw new Error('El lote se creó, pero la API no devolvió el identificador del predio para guardar su ubicación.');
+    if (!predioLocation) throw new Error('Marca la ubicación del predio en el mapa.');
+    await api.updatePredio(predioId, { ubicacion: predioLocation });
     await api.updateLote(lotId, { geom: geometry, ubicacion: center });
   };
 
@@ -178,9 +177,10 @@ export default function WorkspaceSetupView({ existingLots = [], onComplete, onCa
     return (
       <section className="mx-auto max-w-2xl rounded-3xl border border-outline-variant/50 bg-white p-6 shadow-sm sm:p-10">
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-secondary/10 text-secondary"><CheckCircle2 size={34} /></div>
-        <h1 className="mt-5 text-center font-epilogue text-3xl font-bold text-primary">Tu espacio ya está listo</h1>
+        <h1 className="mt-5 text-center font-epilogue text-3xl font-bold text-primary">{locationSaved ? 'Tu espacio ya está listo' : 'El lote ya se creó'}</h1>
         <p className="mt-2 text-center text-sm leading-6 text-on-surface-variant">
           Creamos <strong>{String(createdLot.nombre ?? 'tu lote')}</strong> dentro de {String(createdLot.predio_nombre ?? 'tu predio')}.
+          {!locationSaved ? ' Aún falta guardar su ubicación geográfica.' : ''}
           {createdProjectId ? ' También quedó creado tu primer proyecto.' : ''}
         </p>
         {locationError && <p role="alert" className="mt-5 rounded-xl border border-error/30 bg-error-container/40 px-4 py-3 text-sm text-on-error-container">El lote se creó, pero su ubicación no quedó guardada: {locationError}. Reintenta guardar para completar el mapa; no necesitas crear el lote otra vez.</p>}
